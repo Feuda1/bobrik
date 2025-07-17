@@ -1,7 +1,7 @@
 import datetime
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QLabel, QTextEdit
+from PyQt6.QtWidgets import QFrame, QVBoxLayout, QTextEdit
 from PyQt6.QtGui import QTextCursor
-from ui.styles import PANEL_STYLE, TITLE_STYLE, CONSOLE_STYLE
+from ui.styles import PANEL_STYLE, CONSOLE_STYLE
 from config import COLORS
 
 class ConsolePanel(QFrame):
@@ -13,13 +13,10 @@ class ConsolePanel(QFrame):
         self.setStyleSheet(PANEL_STYLE)
         
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(10)
+        layout.setContentsMargins(15, 15, 15, 15)  # Уменьшили отступы
+        layout.setSpacing(0)  # Убрали промежуток
         
-        title = QLabel("Консоль")
-        title.setStyleSheet(TITLE_STYLE)
-        layout.addWidget(title)
-        
+        # Убрали заголовок "Консоль"
         self.console = QTextEdit()
         self.console.setReadOnly(True)
         self.console.setStyleSheet(CONSOLE_STYLE)
