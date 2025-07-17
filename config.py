@@ -1,4 +1,6 @@
-WINDOW_TITLE = "Bobrik"
+import os
+
+WINDOW_TITLE = ""
 WINDOW_WIDTH = 1200
 WINDOW_HEIGHT = 700
 
@@ -31,4 +33,38 @@ FONTS = {
 TOUCHSCREEN_KEYWORDS = [
     'touch', 'hid-compliant', 'touchscreen', 'digitizer', 
     'touch screen', 'multi-touch', 'finger'
+]
+
+USERNAME = os.getenv('USERNAME', 'User')
+
+IIKO_PATHS = {
+    'executable': r"C:\Program Files\iiko\iikoRMS\Front.Net\iikoFront.Net.exe",
+    'logs': f"C:\\Users\\{USERNAME}\\AppData\\Roaming\\iiko\\CashServer\\Logs",
+    'entities_storage': f"C:\\Users\\{USERNAME}\\AppData\\Roaming\\iiko\\CashServer\\EntitiesStorage",
+    'plugin_configs': f"C:\\Users\\{USERNAME}\\AppData\\Roaming\\iiko\\CashServer\\PluginConfigs",
+    'config_xml': f"C:\\Users\\{USERNAME}\\AppData\\Roaming\\iiko\\CashServer\\config.xml",
+    'entities_db': f"C:\\Users\\{USERNAME}\\AppData\\Roaming\\iiko\\CashServer\\EntitiesStorage\\Entities"
+}
+
+SYSTEM_PATHS = {
+    'notepad_plus': r"C:\Program Files\Notepad++\notepad++.exe",
+    'startup_folder': f"C:\\Users\\{USERNAME}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup",
+    'temp_folders': [
+        os.getenv('TEMP'),
+        f"C:\\Users\\{USERNAME}\\AppData\\Local\\Temp",
+        r"C:\Windows\Temp"
+    ]
+}
+
+IIKO_CARD_URL = "https://m1.iiko.cards/ru-RU/About/DownloadPosInstaller?useRc=False"
+
+LOG_KEYWORDS = [
+    'cash-server',
+    'virtual-printer', 
+    'OnlineMarkingVerificationPlugin',
+    'PaymentSystem.DualConnector',
+    'SberbankPlugin',
+    'Transport',
+    'Api.Delivery',
+    'AlcoholMarkingPlugin'
 ]

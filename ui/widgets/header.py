@@ -14,10 +14,9 @@ class HeaderWidget(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(20, 0, 20, 0)
         
-        logo_label = QLabel("Bobrik")
+        logo_label = QLabel("bobrik")
         logo_label.setStyleSheet(LOGO_STYLE)
         
-        # Версия
         version_label = QLabel("v1.0")
         version_label.setStyleSheet("""
             QLabel {
@@ -27,7 +26,6 @@ class HeaderWidget(QFrame):
             }
         """)
         
-        # Время
         self.time_label = QLabel()
         self.time_label.setStyleSheet("""
             QLabel {

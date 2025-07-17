@@ -1,20 +1,30 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QScrollArea, QStackedWidget, QPushButton, QButtonGroup)
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon, QPixmap
 from ui.styles import MAIN_WINDOW_STYLE
 from ui.widgets.header import HeaderWidget
 from ui.widgets.console_panel import ConsolePanel
 from ui.tabs.system_tab import SystemTab
+from ui.tabs.iiko_tab import IikoTab
+from ui.tabs.logs_tab import LogsTab
+from ui.tabs.folders_tab import FoldersTab
+from ui.tabs.network_tab import NetworkTab
 from config import WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.init_ui()
-        self.console_panel.add_log("Bobrik запущен", "info")
+        self.console_panel.add_log("bobrik запущен", "info")
         
     def init_ui(self):
-        self.setWindowTitle(WINDOW_TITLE)
+        self.setWindowTitle(" ")
+        # Создаем полностью прозрачную иконку
+        from PyQt6.QtGui import QPixmap
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        self.setWindowIcon(QIcon(pixmap))
         self.setGeometry(100, 100, WINDOW_WIDTH, WINDOW_HEIGHT)
         self.setStyleSheet(MAIN_WINDOW_STYLE)
         
@@ -30,11 +40,9 @@ class MainWindow(QMainWindow):
         content_layout.setContentsMargins(15, 15, 15, 15)
         content_layout.setSpacing(15)
         
-        # Левая панель с вертикальными вкладками
         tabs_layout = QHBoxLayout()
         tabs_layout.setSpacing(10)
         
-        # Панель кнопок вкладок с прокруткой
         tabs_scroll = QScrollArea()
         tabs_scroll.setWidgetResizable(True)
         tabs_scroll.setFixedWidth(120)
@@ -47,15 +55,12 @@ class MainWindow(QMainWindow):
         tabs_layout_inner.setContentsMargins(5, 5, 5, 5)
         tabs_layout_inner.setSpacing(2)
         
-        # Группа кнопок для вкладок
         self.tab_buttons = QButtonGroup()
         self.tab_buttons.setExclusive(True)
         
-        # Стек виджетов для содержимого вкладок
         self.stacked_widget = QStackedWidget()
         self.stacked_widget.setStyleSheet(self.get_content_style())
         
-        # Создаем вкладки
         self.create_tabs(tabs_layout_inner)
         
         tabs_layout_inner.addStretch()
@@ -66,16 +71,13 @@ class MainWindow(QMainWindow):
         
         content_layout.addLayout(tabs_layout, 2)
         
-        # Правая панель с консолью
         self.console_panel = ConsolePanel()
         content_layout.addWidget(self.console_panel, 1)
         
         main_layout.addLayout(content_layout)
         
-        # Подключаем сигнал переключения вкладок
         self.tab_buttons.idClicked.connect(self.switch_tab)
         
-        # Активируем первую вкладку
         if self.tab_buttons.buttons():
             self.tab_buttons.buttons()[0].setChecked(True)
             self.stacked_widget.setCurrentIndex(0)
@@ -84,17 +86,10 @@ class MainWindow(QMainWindow):
         """Создание вкладок"""
         tabs_data = [
             ("Система", SystemTab()),
-            ("Сеть", QWidget()),
-            ("Файлы", QWidget()),
-            ("Процессы", QWidget()),
-            ("Инструменты", QWidget()),
-            ("Мониторинг", QWidget()),
-            ("Настройки", QWidget()),
-            ("Логи", QWidget()),
-            ("Безопасность", QWidget()),
-            ("Обновления", QWidget()),
-            ("Диагностика", QWidget()),
-            ("Отчеты", QWidget()),
+            ("iiko", IikoTab()),
+            ("Логи", LogsTab()),
+            ("Папки", FoldersTab()),
+            ("Сеть", NetworkTab()),
         ]
         
         for i, (name, widget) in enumerate(tabs_data):
@@ -108,7 +103,6 @@ class MainWindow(QMainWindow):
             layout.addWidget(button)
             self.stacked_widget.addWidget(widget)
             
-            # Подключаем сигнал лога для системной вкладки
             if hasattr(widget, 'log_signal'):
                 widget.log_signal.connect(self.add_log)
         
@@ -183,8 +177,8 @@ class MainWindow(QMainWindow):
         self.console_panel.add_log(message, log_type)
         
     def closeEvent(self, event):
-        # Вызываем cleanup для всех вкладок
-        system_widget = self.stacked_widget.widget(0)
-        if hasattr(system_widget, 'cleanup'):
-            system_widget.cleanup()
+        for i in range(self.stacked_widget.count()):
+            widget = self.stacked_widget.widget(i)
+            if hasattr(widget, 'cleanup'):
+                widget.cleanup()
         event.accept()

@@ -4,6 +4,9 @@ from managers.touchscreen_manager import TouchscreenManager
 from managers.reboot_manager import RebootManager
 from managers.device_manager import DeviceManager
 from managers.network_manager import NetworkManager
+from managers.cleanup_manager import CleanupManager
+from managers.iiko_manager import IikoManager
+from managers.rndis_manager import RndisManager
 
 class SystemTab(QWidget):
     log_signal = pyqtSignal(str, str)
@@ -24,6 +27,15 @@ class SystemTab(QWidget):
         self.network_manager = NetworkManager(self)
         self.network_manager.log_signal.connect(self.log_signal.emit)
         
+        self.cleanup_manager = CleanupManager(self)
+        self.cleanup_manager.log_signal.connect(self.log_signal.emit)
+        
+        self.iiko_manager = IikoManager(self)
+        self.iiko_manager.log_signal.connect(self.log_signal.emit)
+        
+        self.rndis_manager = RndisManager(self)
+        self.rndis_manager.log_signal.connect(self.log_signal.emit)
+        
         self.init_ui()
         
     def init_ui(self):
@@ -43,7 +55,7 @@ class SystemTab(QWidget):
         layout.addWidget(title)
         
         buttons_container = QWidget()
-        buttons_container.setFixedSize(330, 150)
+        buttons_container.setFixedSize(645, 150)
         buttons_container.setStyleSheet("QWidget { background-color: transparent; }")
         
         grid = QGridLayout(buttons_container)
@@ -58,25 +70,45 @@ class SystemTab(QWidget):
         self.restart_button.clicked.connect(self.request_reboot)
         grid.addWidget(self.restart_button, 0, 1)
         
+        cleanup_button = self.create_button("Очистка\nTemp файлов", False)
+        cleanup_button.clicked.connect(self.clean_temp_files)
+        grid.addWidget(cleanup_button, 0, 2)
+        
+        com_button = self.create_button("Перезапуск\nCOM портов", False)
+        com_button.clicked.connect(self.restart_com_ports)
+        grid.addWidget(com_button, 0, 3)
+        
         services_button = self.create_button("Управление\nслужбами", False)
         services_button.clicked.connect(self.open_services)
-        grid.addWidget(services_button, 0, 2)
+        grid.addWidget(services_button, 1, 0)
         
-        ipconfig_button = self.create_button("IP\nконфигурация", False)
-        ipconfig_button.clicked.connect(self.run_ipconfig)
-        grid.addWidget(ipconfig_button, 1, 0)
+        security_button = self.create_button("Отключить\nзащиту", False)
+        security_button.clicked.connect(self.disable_security)
+        grid.addWidget(security_button, 1, 1)
         
-        registry_button = self.create_button("Редактор\nреестра", False)
-        registry_button.clicked.connect(self.open_registry_editor)
-        grid.addWidget(registry_button, 1, 1)
+        startup_button = self.create_button("Папка\nавтозагрузки", False)
+        startup_button.clicked.connect(self.open_startup)
+        grid.addWidget(startup_button, 1, 2)
         
-        self.devices_button = self.create_button("Диспетчер\nустройств", False)
-        self.devices_button.clicked.connect(self.open_device_manager)
-        grid.addWidget(self.devices_button, 1, 2)
+        control_button = self.create_button("Панель\nуправления", False)
+        control_button.clicked.connect(self.open_control_panel)
+        grid.addWidget(control_button, 1, 3)
         
-        info_button = self.create_button("Информация\nо системе", False)
-        info_button.clicked.connect(self.open_system_info)
-        grid.addWidget(info_button, 2, 0)
+        rndis_button = self.create_button("Перезагрузка\nRNDIS", False)
+        rndis_button.clicked.connect(self.restart_rndis)
+        grid.addWidget(rndis_button, 1, 4)
+        
+        print_restart_button = self.create_button("Перезапуск\nдисп. печати", False)
+        print_restart_button.clicked.connect(self.restart_print_spooler)
+        grid.addWidget(print_restart_button, 2, 0)
+        
+        print_clear_button = self.create_button("Очистка\nочереди печати", False)
+        print_clear_button.clicked.connect(self.clear_print_queue)
+        grid.addWidget(print_clear_button, 2, 1)
+        
+        tls_button = self.create_button("Настройка\nTLS 1.2", False)
+        tls_button.clicked.connect(self.configure_tls)
+        grid.addWidget(tls_button, 2, 2)
         
         layout.addWidget(buttons_container)
         layout.addStretch()
@@ -171,20 +203,35 @@ class SystemTab(QWidget):
     def request_reboot(self):
         self.reboot_manager.request_reboot()
         
-    def open_device_manager(self):
-        self.device_manager.open_device_manager()
-        
-    def open_system_info(self):
-        self.device_manager.open_system_info()
-        
-    def open_registry_editor(self):
-        self.device_manager.open_registry_editor()
-        
     def open_services(self):
         self.device_manager.open_services()
         
-    def run_ipconfig(self):
-        self.network_manager.run_ipconfig()
+    def clean_temp_files(self):
+        self.cleanup_manager.clean_temp_files()
+        
+    def restart_com_ports(self):
+        self.iiko_manager.restart_com_ports()
+        
+    def disable_security(self):
+        self.cleanup_manager.disable_windows_defender()
+        
+    def open_startup(self):
+        self.cleanup_manager.open_startup_folder()
+        
+    def open_control_panel(self):
+        self.cleanup_manager.open_control_panel()
+        
+    def restart_rndis(self):
+        self.rndis_manager.restart_rndis()
+        
+    def restart_print_spooler(self):
+        self.cleanup_manager.restart_print_spooler()
+        
+    def clear_print_queue(self):
+        self.cleanup_manager.clear_print_queue()
+        
+    def configure_tls(self):
+        self.cleanup_manager.configure_tls()
         
     def cleanup(self):
         if self.touchscreen_manager.is_disabled:

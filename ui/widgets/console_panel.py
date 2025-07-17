@@ -1,6 +1,7 @@
 import datetime
-from PyQt6.QtWidgets import QFrame, QVBoxLayout, QTextEdit
+from PyQt6.QtWidgets import QFrame, QVBoxLayout, QTextEdit, QHBoxLayout, QPushButton
 from PyQt6.QtGui import QTextCursor
+from PyQt6.QtCore import Qt
 from ui.styles import PANEL_STYLE, CONSOLE_STYLE
 from config import COLORS
 
@@ -13,14 +14,48 @@ class ConsolePanel(QFrame):
         self.setStyleSheet(PANEL_STYLE)
         
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)  # Уменьшили отступы
-        layout.setSpacing(0)  # Убрали промежуток
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(5)
         
-        # Убрали заголовок "Консоль"
+        # Кнопка очистки консоли
+        button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        
+        clear_button = QPushButton("Очистить")
+        clear_button.setFixedSize(70, 25)
+        clear_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        clear_button.clicked.connect(self.clear_console)
+        clear_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                color: #e0e0e0;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover {
+                background-color: #3a3a3a;
+                border-color: #4a4a4a;
+            }
+            QPushButton:pressed {
+                background-color: #1a1a1a;
+            }
+        """)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(clear_button)
+        layout.addLayout(button_layout)
+        
         self.console = QTextEdit()
         self.console.setReadOnly(True)
         self.console.setStyleSheet(CONSOLE_STYLE)
         layout.addWidget(self.console)
+        
+    def clear_console(self):
+        """Очищает консоль"""
+        self.console.clear()
+        self.add_log("Консоль очищена", "info")
         
     def add_log(self, message, log_type="info"):
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")
