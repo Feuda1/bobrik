@@ -31,7 +31,6 @@ class SystemTab(QWidget):
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(15)
         
-        # Заголовок
         title = QLabel("Системные функции")
         title.setStyleSheet("""
             QLabel {
@@ -43,59 +42,48 @@ class SystemTab(QWidget):
         """)
         layout.addWidget(title)
         
-        # Контейнер для кнопок с фиксированным размером
         buttons_container = QWidget()
-        buttons_container.setFixedSize(420, 100)  # Увеличили ширину для 4 кнопок
+        buttons_container.setFixedSize(330, 150)
         buttons_container.setStyleSheet("QWidget { background-color: transparent; }")
         
-        # Сетка для кнопок
         grid = QGridLayout(buttons_container)
-        grid.setSpacing(1)
+        grid.setSpacing(5)
         grid.setContentsMargins(0, 0, 0, 0)
         
-        # Кнопка сенсорного экрана (переключаемая)
         self.touchscreen_button = self.create_button("Сенсорный\nэкран", False, is_toggle=True)
         self.touchscreen_button.clicked.connect(self.toggle_touchscreen)
         grid.addWidget(self.touchscreen_button, 0, 0)
         
-        # Кнопка перезагрузки (обычная)
         self.restart_button = self.create_button("Перезагрузка\nсистемы", False)
         self.restart_button.clicked.connect(self.request_reboot)
         grid.addWidget(self.restart_button, 0, 1)
         
-        # Остальные кнопки
         services_button = self.create_button("Управление\nслужбами", False)
         services_button.clicked.connect(self.open_services)
         grid.addWidget(services_button, 0, 2)
         
-        # Кнопка ipconfig
         ipconfig_button = self.create_button("IP\nконфигурация", False)
         ipconfig_button.clicked.connect(self.run_ipconfig)
-        grid.addWidget(ipconfig_button, 0, 3)
+        grid.addWidget(ipconfig_button, 1, 0)
         
         registry_button = self.create_button("Редактор\nреестра", False)
         registry_button.clicked.connect(self.open_registry_editor)
-        grid.addWidget(registry_button, 1, 0)
+        grid.addWidget(registry_button, 1, 1)
         
         self.devices_button = self.create_button("Диспетчер\nустройств", False)
         self.devices_button.clicked.connect(self.open_device_manager)
-        grid.addWidget(self.devices_button, 1, 1)
+        grid.addWidget(self.devices_button, 1, 2)
         
         info_button = self.create_button("Информация\nо системе", False)
         info_button.clicked.connect(self.open_system_info)
-        grid.addWidget(info_button, 1, 2)
-        
-        # Кнопка ping
-        ping_button = self.create_button("Ping\nтест", False)
-        ping_button.clicked.connect(self.run_ping)
-        grid.addWidget(ping_button, 1, 3)
+        grid.addWidget(info_button, 2, 0)
         
         layout.addWidget(buttons_container)
         layout.addStretch()
         
     def create_button(self, text, is_active, enabled=True, is_toggle=False):
         button = QPushButton(text)
-        button.setFixedSize(100, 45)
+        button.setFixedSize(105, 45)
         button.setCursor(Qt.CursorShape.PointingHandCursor if enabled else Qt.CursorShape.ForbiddenCursor)
         button.setEnabled(enabled)
         self.update_button_style(button, is_active, enabled, is_toggle)
@@ -115,7 +103,6 @@ class SystemTab(QWidget):
                 }
             """
         elif is_toggle:
-            # Стиль для переключаемых кнопок (красный/зелёный)
             if is_active:
                 style = """
                     QPushButton {
@@ -155,7 +142,6 @@ class SystemTab(QWidget):
                     }
                 """
         else:
-            # Стиль для обычных кнопок (нейтральный серый)
             style = """
                 QPushButton {
                     background-color: #2a2a2a;
@@ -177,7 +163,6 @@ class SystemTab(QWidget):
         button.setStyleSheet(style)
         
     def update_touchscreen_button(self, is_disabled):
-        # is_disabled = True означает, что сенсор выключен, поэтому кнопка красная
         self.update_button_style(self.touchscreen_button, not is_disabled, True, is_toggle=True)
         
     def toggle_touchscreen(self):
@@ -200,9 +185,6 @@ class SystemTab(QWidget):
         
     def run_ipconfig(self):
         self.network_manager.run_ipconfig()
-        
-    def run_ping(self):
-        self.network_manager.run_ping("8.8.8.8", 4)
         
     def cleanup(self):
         if self.touchscreen_manager.is_disabled:

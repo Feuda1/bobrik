@@ -1,9 +1,10 @@
 import subprocess
 import sys
+import re
 from PyQt6.QtCore import QThread, pyqtSignal
 
 class NetworkManager(QThread):
-    log_signal = pyqtSignal(str, str)  # message, log_type
+    log_signal = pyqtSignal(str, str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -13,110 +14,146 @@ class NetworkManager(QThread):
         pass
         
     def run_ipconfig(self):
-        """Выполняет ipconfig и выводит результат в консоль"""
+        """Выполняет ipconfig и показывает только основное подключение"""
         try:
             if sys.platform == "win32":
-                # Windows - ipconfig /all
-                self.log_signal.emit("Выполняем ipconfig /all...", "info")
-                result = subprocess.run(['ipconfig', '/all'], capture_output=True, text=True, encoding='cp866')
+                self.log_signal.emit("Получение IP конфигурации...", "info")
+                result = subprocess.run(['ipconfig'], capture_output=True, text=True, encoding='cp866')
                 
                 if result.returncode == 0:
-                    # Разбиваем вывод на строки и отправляем по одной
-                    lines = result.stdout.strip().split('\n')
-                    for line in lines:
-                        if line.strip():  # Пропускаем пустые строки
-                            self.log_signal.emit(line.strip(), "info")
-                    self.log_signal.emit("ipconfig выполнен успешно", "success")
+                    self.parse_windows_ipconfig(result.stdout)
                 else:
                     self.log_signal.emit(f"Ошибка выполнения ipconfig: {result.stderr}", "error")
                     
             elif sys.platform == "linux":
-                # Linux - ifconfig или ip addr
-                self.log_signal.emit("Выполняем ifconfig...", "info")
+                self.log_signal.emit("Получение IP конфигурации...", "info")
                 try:
-                    result = subprocess.run(['ifconfig'], capture_output=True, text=True)
+                    result = subprocess.run(['ip', 'route', 'get', '8.8.8.8'], capture_output=True, text=True)
                     if result.returncode == 0:
-                        lines = result.stdout.strip().split('\n')
-                        for line in lines:
-                            if line.strip():
-                                self.log_signal.emit(line.strip(), "info")
-                        self.log_signal.emit("ifconfig выполнен успешно", "success")
+                        self.parse_linux_ip(result.stdout)
                     else:
-                        raise subprocess.CalledProcessError(result.returncode, 'ifconfig')
-                except (subprocess.CalledProcessError, FileNotFoundError):
-                    # Если ifconfig не найден, пробуем ip addr
-                    self.log_signal.emit("ifconfig не найден, пробуем ip addr...", "warning")
-                    try:
-                        result = subprocess.run(['ip', 'addr'], capture_output=True, text=True)
-                        if result.returncode == 0:
-                            lines = result.stdout.strip().split('\n')
-                            for line in lines:
-                                if line.strip():
-                                    self.log_signal.emit(line.strip(), "info")
-                            self.log_signal.emit("ip addr выполнен успешно", "success")
-                        else:
-                            self.log_signal.emit("Ошибка выполнения ip addr", "error")
-                    except FileNotFoundError:
-                        self.log_signal.emit("Команды ifconfig и ip не найдены", "error")
-                        
+                        self.parse_linux_fallback()
+                except FileNotFoundError:
+                    self.parse_linux_fallback()
+                    
             elif sys.platform == "darwin":
-                # macOS - ifconfig
-                self.log_signal.emit("Выполняем ifconfig...", "info")
-                result = subprocess.run(['ifconfig'], capture_output=True, text=True)
+                self.log_signal.emit("Получение IP конфигурации...", "info")
+                result = subprocess.run(['route', 'get', 'default'], capture_output=True, text=True)
                 if result.returncode == 0:
-                    lines = result.stdout.strip().split('\n')
-                    for line in lines:
-                        if line.strip():
-                            self.log_signal.emit(line.strip(), "info")
-                    self.log_signal.emit("ifconfig выполнен успешно", "success")
+                    self.parse_macos_route(result.stdout)
                 else:
-                    self.log_signal.emit(f"Ошибка выполнения ifconfig: {result.stderr}", "error")
+                    self.log_signal.emit("Ошибка получения маршрута", "error")
                     
             else:
-                self.log_signal.emit("Получение сетевой информации не поддерживается для данной ОС", "error")
+                self.log_signal.emit("Получение IP конфигурации не поддерживается для данной ОС", "error")
                 
         except Exception as e:
-            self.log_signal.emit(f"Неожиданная ошибка при выполнении сетевой команды: {str(e)}", "error")
+            self.log_signal.emit(f"Ошибка при получении IP конфигурации: {str(e)}", "error")
             
-    def run_ping(self, host="8.8.8.8", count=4):
-        """Выполняет ping указанного хоста"""
+    def parse_windows_ipconfig(self, output):
+        """Парсит вывод ipconfig для Windows"""
+        lines = output.strip().split('\n')
+        current_adapter = None
+        
+        for line in lines:
+            line = line.strip()
+            
+            if 'адаптер' in line.lower() or 'adapter' in line.lower():
+                if 'ethernet' in line.lower() or 'wi-fi' in line.lower() or 'wireless' in line.lower():
+                    current_adapter = line.replace(':', '').strip()
+                    continue
+                    
+            if current_adapter and ('IPv4' in line or 'IP-адрес' in line):
+                ip_match = re.search(r'(\d+\.\d+\.\d+\.\d+)', line)
+                if ip_match:
+                    ip = ip_match.group(1)
+                    if not ip.startswith('169.254'):
+                        adapter_name = self.clean_adapter_name(current_adapter)
+                        self.log_signal.emit(f"{adapter_name}: {ip}", "success")
+                        return
+                        
+        self.log_signal.emit("Активное подключение не найдено", "warning")
+        
+    def parse_linux_ip(self, output):
+        """Парсит вывод ip route для Linux"""
+        lines = output.strip().split('\n')
+        for line in lines:
+            if 'src' in line:
+                parts = line.split()
+                try:
+                    src_index = parts.index('src')
+                    if src_index + 1 < len(parts):
+                        ip = parts[src_index + 1]
+                        dev_index = parts.index('dev') if 'dev' in parts else -1
+                        if dev_index != -1 and dev_index + 1 < len(parts):
+                            interface = parts[dev_index + 1]
+                            self.log_signal.emit(f"{interface}: {ip}", "success")
+                            return
+                except (ValueError, IndexError):
+                    continue
+                    
+        self.log_signal.emit("Активное подключение не найдено", "warning")
+        
+    def parse_linux_fallback(self):
+        """Запасной вариант для Linux"""
         try:
-            if sys.platform == "win32":
-                # Windows ping
-                self.log_signal.emit(f"Выполняем ping {host}...", "info")
-                result = subprocess.run(['ping', '-n', str(count), host], capture_output=True, text=True, encoding='cp866')
-            else:
-                # Linux/macOS ping
-                self.log_signal.emit(f"Выполняем ping {host}...", "info")
-                result = subprocess.run(['ping', '-c', str(count), host], capture_output=True, text=True)
-                
+            result = subprocess.run(['hostname', '-I'], capture_output=True, text=True)
             if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
-                for line in lines:
-                    if line.strip():
-                        self.log_signal.emit(line.strip(), "info")
-                self.log_signal.emit(f"ping {host} выполнен успешно", "success")
+                ips = result.stdout.strip().split()
+                if ips:
+                    self.log_signal.emit(f"Основной IP: {ips[0]}", "success")
+                else:
+                    self.log_signal.emit("IP адрес не найден", "warning")
             else:
-                self.log_signal.emit(f"Ошибка ping {host}: {result.stderr}", "error")
-                
-        except Exception as e:
-            self.log_signal.emit(f"Ошибка при выполнении ping: {str(e)}", "error")
+                self.log_signal.emit("Не удалось получить IP адрес", "error")
+        except FileNotFoundError:
+            self.log_signal.emit("Команды для получения IP не найдены", "error")
+            
+    def parse_macos_route(self, output):
+        """Парсит вывод route для macOS"""
+        lines = output.strip().split('\n')
+        interface = None
+        
+        for line in lines:
+            if 'interface:' in line:
+                interface = line.split(':')[1].strip()
+            elif 'src' in line:
+                parts = line.split()
+                if len(parts) >= 2:
+                    ip = parts[1]
+                    if interface:
+                        self.log_signal.emit(f"{interface}: {ip}", "success")
+                    else:
+                        self.log_signal.emit(f"Основной IP: {ip}", "success")
+                    return
+                    
+        self.log_signal.emit("Активное подключение не найдено", "warning")
+        
+    def clean_adapter_name(self, adapter_name):
+        """Очищает имя адаптера для более читаемого вывода"""
+        adapter_name = adapter_name.lower()
+        
+        if 'ethernet' in adapter_name:
+            return 'Ethernet'
+        elif 'wi-fi' in adapter_name or 'wireless' in adapter_name:
+            return 'Wi-Fi'
+        elif 'bluetooth' in adapter_name:
+            return 'Bluetooth'
+        else:
+            return 'Сетевой адаптер'
             
     def run_netstat(self):
         """Выполняет netstat для показа сетевых соединений"""
         try:
             if sys.platform == "win32":
-                # Windows netstat
                 self.log_signal.emit("Выполняем netstat -an...", "info")
                 result = subprocess.run(['netstat', '-an'], capture_output=True, text=True, encoding='cp866')
             else:
-                # Linux/macOS netstat
                 self.log_signal.emit("Выполняем netstat -an...", "info")
                 result = subprocess.run(['netstat', '-an'], capture_output=True, text=True)
                 
             if result.returncode == 0:
                 lines = result.stdout.strip().split('\n')
-                # Показываем первые 20 строк, чтобы не перегружать консоль
                 for i, line in enumerate(lines):
                     if i >= 20:
                         self.log_signal.emit(f"... (показано первых 20 строк из {len(lines)})", "info")
