@@ -55,7 +55,7 @@ class SystemTab(QWidget):
         layout.addWidget(title)
         
         buttons_container = QWidget()
-        buttons_container.setFixedSize(645, 150)
+        buttons_container.setFixedSize(645, 200)
         buttons_container.setStyleSheet("QWidget { background-color: transparent; }")
         
         grid = QGridLayout(buttons_container)
@@ -94,10 +94,6 @@ class SystemTab(QWidget):
         control_button.clicked.connect(self.open_control_panel)
         grid.addWidget(control_button, 1, 3)
         
-        rndis_button = self.create_button("Перезагрузка\nRNDIS", False)
-        rndis_button.clicked.connect(self.restart_rndis)
-        grid.addWidget(rndis_button, 1, 4)
-        
         print_restart_button = self.create_button("Перезапуск\nдисп. печати", False)
         print_restart_button.clicked.connect(self.restart_print_spooler)
         grid.addWidget(print_restart_button, 2, 0)
@@ -109,6 +105,28 @@ class SystemTab(QWidget):
         tls_button = self.create_button("Настройка\nTLS 1.2", False)
         tls_button.clicked.connect(self.configure_tls)
         grid.addWidget(tls_button, 2, 2)
+        
+        rndis_button = self.create_button("Перезапуск\nRNDIS", False)
+        rndis_button.clicked.connect(self.toggle_internet_sharing)
+        rndis_button.setStyleSheet("""
+            QPushButton {
+                background-color: #1e40af;
+                border: 1px solid #3b82f6;
+                border-radius: 4px;
+                color: #3b82f6;
+                font-size: 11px;
+                font-weight: 500;
+                padding: 4px 2px;
+            }
+            QPushButton:hover {
+                background-color: #1d4ed8;
+                border-color: #60a5fa;
+            }
+            QPushButton:pressed {
+                background-color: #1e3a8a;
+            }
+        """)
+        grid.addWidget(rndis_button, 2, 3)
         
         layout.addWidget(buttons_container)
         layout.addStretch()
@@ -221,9 +239,6 @@ class SystemTab(QWidget):
     def open_control_panel(self):
         self.cleanup_manager.open_control_panel()
         
-    def restart_rndis(self):
-        self.rndis_manager.restart_rndis()
-        
     def restart_print_spooler(self):
         self.cleanup_manager.restart_print_spooler()
         
@@ -232,6 +247,9 @@ class SystemTab(QWidget):
         
     def configure_tls(self):
         self.cleanup_manager.configure_tls()
+        
+    def toggle_internet_sharing(self):
+        self.rndis_manager.toggle_internet_sharing()
         
     def cleanup(self):
         if self.touchscreen_manager.is_disabled:

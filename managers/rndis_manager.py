@@ -1,645 +1,375 @@
 import subprocess
-import win32com.client
-import wmi
-import pythoncom
-import ctypes
 import sys
-import logging
-import json
 import time
-from contextlib import contextmanager
-from dataclasses import dataclass
-from typing import List, Dict, Optional, Union
+import threading
+from PyQt6.QtCore import QThread, pyqtSignal
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Кастомные исключения
-class IcsError(Exception):
-    """Базовое исключение для ICS операций"""
-    pass
-
-class InsufficientPrivilegesError(IcsError):
-    """Недостаточно прав для выполнения операции"""
-    pass
-
-class NetworkAdapterError(IcsError):
-    """Ошибка сетевого адаптера"""
-    pass
-
-class ServiceError(IcsError):
-    """Ошибка службы ICS"""
-    pass
-
-@dataclass
-class NetworkConnection:
-    """Информация о сетевом подключении"""
-    name: str
-    guid: str
-    device_name: str
-    status: int
-    media_type: int
-    sharing_enabled: bool = False
-    sharing_type: Optional[int] = None
-
-class RndisManager:
-    """
-    Комплексный менеджер для управления Internet Connection Sharing (ICS)
-    Поддерживает различные методы: COM, PowerShell, WMI
-    """
+class RndisManager(QThread):
+    log_signal = pyqtSignal(str, str)
     
-    def __init__(self, prefer_powershell: bool = True):
-        """
-        Инициализация RndisManager
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.parent = parent
+        self.sharing_enabled = False
+        self.saved_private_connection = None  # Запоминаем выбранную приватную сеть
         
-        Args:
-            prefer_powershell: Предпочитать PowerShell методы вместо COM
-        """
-        self.prefer_powershell = prefer_powershell
-        self._wmi_connection = None
-        self._net_share = None
-        self._ps_module_available = False
-        
-        # Проверка системных требований
-        if not self._check_admin_rights():
-            raise InsufficientPrivilegesError("Administrator rights required")
-        
-        self._initialize_connections()
+    def run(self):
+        pass
     
-    def _check_admin_rights(self) -> bool:
-        """Проверка прав администратора"""
+    def toggle_internet_sharing(self):
+        """Автоматическое переключение общего доступа"""
         try:
-            return ctypes.windll.shell32.IsUserAnAdmin()
-        except:
-            return False
+            if sys.platform != "win32":
+                self.log_signal.emit("Функция доступна только в Windows", "error")
+                return
+            
+            self.log_signal.emit("Запуск автоматического переключения общего доступа...", "info")
+            
+            # Запускаем в отдельном потоке
+            threading.Thread(target=self._auto_sharing_cycle, daemon=True).start()
+            
+        except Exception as e:
+            self.log_signal.emit(f"Ошибка: {str(e)}", "error")
     
-    def _initialize_connections(self):
-        """Инициализация подключений к системным сервисам"""
+    def _auto_sharing_cycle(self):
+        """Автоматический цикл включения/выключения"""
         try:
-            # Инициализация COM
+            # Сначала сохраняем текущие настройки
+            self.log_signal.emit("Сохраняем текущие настройки сети...", "info")
+            self._save_current_sharing_settings()
+            
+            # Включаем
+            self.log_signal.emit("Включаем общий доступ к интернету...", "info")
+            self._enable_sharing_quick()
+            
+            # Ждем 3 секунды
+            time.sleep(3)
+            
+            # Выключаем
+            self.log_signal.emit("Выключаем общий доступ к интернету...", "warning")
+            self._disable_sharing_quick()
+            
+            # Ждем 2 секунды
+            time.sleep(2)
+            
+            # Снова включаем с восстановлением настроек
+            self.log_signal.emit("Снова включаем общий доступ к интернету...", "info")
+            self._enable_sharing_with_restore()
+            
+            self.log_signal.emit("Переключение общего доступа завершено", "success")
+            self.log_signal.emit("RNDIS перезагружен", "success")
+            
+        except Exception as e:
+            self.log_signal.emit(f"Ошибка: {str(e)}", "error")
+    
+    def _enable_sharing_quick(self):
+        """Быстрое включение общего доступа"""
+        try:
+            commands = [
+                ['sc', 'config', 'SharedAccess', 'start=auto'],
+                ['net', 'start', 'SharedAccess'],
+                ['powershell', '-Command', '''
+                $regPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters"
+                Set-ItemProperty -Path $regPath -Name "EnableRebootPersistConnection" -Value 1 -ErrorAction SilentlyContinue
+                Start-Service -Name "SharedAccess" -ErrorAction SilentlyContinue
+                '''],
+                ['netsh', 'interface', 'ipv4', 'set', 'global', 'forwarding=enabled']
+            ]
+            
+            success_count = 0
+            for cmd in commands:
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        success_count += 1
+                except Exception:
+                    pass
+            
+            # Дополнительно через COM если возможно
+            try:
+                self._enable_com_sharing()
+            except:
+                pass
+                
+            if success_count >= 2:
+                self.log_signal.emit("Общий доступ включен", "success")
+            else:
+                self.log_signal.emit("Частично включен", "warning")
+                
+        except Exception as e:
+            self.log_signal.emit(f"Ошибка включения: {str(e)}", "error")
+    
+    def _disable_sharing_quick(self):
+        """Быстрое выключение общего доступа"""
+        try:
+            commands = [
+                ['net', 'stop', 'SharedAccess'],
+                ['sc', 'config', 'SharedAccess', 'start=demand'],
+                ['powershell', '-Command', '''
+                $regPath = "HKLM:\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters"
+                Set-ItemProperty -Path $regPath -Name "EnableRebootPersistConnection" -Value 0 -ErrorAction SilentlyContinue
+                Stop-Service -Name "SharedAccess" -Force -ErrorAction SilentlyContinue
+                '''],
+                ['netsh', 'interface', 'ipv4', 'set', 'global', 'forwarding=disabled']
+            ]
+            
+            success_count = 0
+            for cmd in commands:
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        success_count += 1
+                except Exception:
+                    pass
+            
+            # Дополнительно через COM если возможно
+            try:
+                self._disable_com_sharing()
+            except:
+                pass
+                
+            if success_count >= 2:
+                self.log_signal.emit("Общий доступ выключен", "success")
+            else:
+                self.log_signal.emit("Частично выключен", "warning")
+                
+        except Exception as e:
+            self.log_signal.emit(f"Ошибка выключения: {str(e)}", "error")
+    
+    def _enable_com_sharing(self):
+        """Включение через COM если доступно"""
+        try:
+            import win32com.client
+            import pythoncom
+            
             pythoncom.CoInitialize()
+            net_share = win32com.client.Dispatch("HNetCfg.HNetShare")
             
-            # Регистрация библиотеки hnetcfg.dll
-            subprocess.run(['regsvr32', '/s', 'hnetcfg.dll'], 
-                         shell=True, check=False)
+            for connection in net_share.EnumEveryConnection:
+                try:
+                    props = net_share.NetConnectionProps(connection)
+                    config = net_share.INetSharingConfigurationForINetConnection(connection)
+                    
+                    if 'ethernet' in props.Name.lower():
+                        if not config.SharingEnabled:
+                            config.EnableSharing(0)
+                            break
+                except:
+                    continue
+                    
+            pythoncom.CoUninitialize()
             
-            # Создание COM объекта
-            self._net_share = win32com.client.Dispatch("HNetCfg.HNetShare")
-            
-            # Инициализация WMI
-            self._wmi_connection = wmi.WMI()
-            
-            # Проверка доступности PowerShell модуля
-            self._ps_module_available = self._check_powershell_module()
-            
-            logger.info("RndisManager initialized successfully")
-            
-        except Exception as e:
-            logger.error(f"Failed to initialize RndisManager: {e}")
-            raise IcsError(f"Initialization failed: {e}")
-    
-    def _check_powershell_module(self) -> bool:
-        """Проверка наличия модуля PSInternetConnectionSharing"""
-        try:
-            result = subprocess.run([
-                "powershell.exe", "-Command",
-                "Get-Module -ListAvailable -Name PSInternetConnectionSharing"
-            ], capture_output=True, text=True, timeout=10)
-            
-            return result.returncode == 0 and result.stdout.strip()
         except:
-            return False
+            pass
     
-    @contextmanager
-    def _safe_com_context(self):
-        """Контекстный менеджер для безопасной работы с COM"""
+    def _disable_com_sharing(self):
+        """Выключение через COM если доступно"""
         try:
-            yield self._net_share
-        except Exception as e:
-            logger.error(f"COM operation failed: {e}")
-            raise IcsError(f"COM error: {e}")
+            import win32com.client
+            import pythoncom
+            
+            pythoncom.CoInitialize()
+            net_share = win32com.client.Dispatch("HNetCfg.HNetShare")
+            
+            for connection in net_share.EnumEveryConnection:
+                try:
+                    config = net_share.INetSharingConfigurationForINetConnection(connection)
+                    if config.SharingEnabled:
+                        config.DisableSharing()
+                except:
+                    continue
+                    
+            pythoncom.CoUninitialize()
+            
+        except:
+            pass
     
-    def _run_powershell_command(self, command: str, timeout: int = 30) -> Dict:
-        """
-        Выполнение PowerShell команды с обработкой ошибок
-        
-        Args:
-            command: PowerShell команда
-            timeout: Таймаут выполнения
-            
-        Returns:
-            Словарь с результатами выполнения
-        """
+    def _save_current_sharing_settings(self):
+        """Сохраняет текущие настройки общего доступа"""
         try:
-            result = subprocess.run([
-                "powershell.exe", "-Command", command
-            ], capture_output=True, text=True, timeout=timeout, check=True)
-            
-            return {
-                "success": True,
-                "output": result.stdout.strip(),
-                "error": None
-            }
-            
-        except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "output": None,
-                "error": "Command timed out"
-            }
-        except subprocess.CalledProcessError as e:
-            return {
-                "success": False,
-                "output": e.stdout,
-                "error": e.stderr
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "output": None,
-                "error": str(e)
-            }
-    
-    def get_network_connections(self) -> List[NetworkConnection]:
-        """
-        Получение списка всех сетевых подключений
-        
-        Returns:
-            Список объектов NetworkConnection
-        """
-        connections = []
-        
-        try:
-            with self._safe_com_context() as net_share:
+            # Метод 1: Через COM (самый точный)
+            try:
+                import win32com.client
+                import pythoncom
+                
+                pythoncom.CoInitialize()
+                net_share = win32com.client.Dispatch("HNetCfg.HNetShare")
+                
                 for connection in net_share.EnumEveryConnection:
                     try:
                         props = net_share.NetConnectionProps(connection)
                         config = net_share.INetSharingConfigurationForINetConnection(connection)
                         
-                        conn_obj = NetworkConnection(
-                            name=props.Name,
-                            guid=props.Guid,
-                            device_name=props.DeviceName,
-                            status=props.Status,
-                            media_type=props.MediaType,
-                            sharing_enabled=config.SharingEnabled,
-                            sharing_type=config.SharingType if config.SharingEnabled else None
-                        )
-                        
-                        connections.append(conn_obj)
-                        
-                    except Exception as e:
-                        logger.warning(f"Failed to get connection info: {e}")
+                        # Если найдено активное подключение с sharing
+                        if config.SharingEnabled:
+                            if config.SharingType == 1:  # 1 = приватное подключение (домашняя сеть)
+                                self.saved_private_connection = props.Name
+                                self.log_signal.emit(f"Сохранена приватная сеть: {props.Name}", "info")
+                                break
+                    except:
                         continue
                         
-        except Exception as e:
-            logger.error(f"Failed to enumerate connections: {e}")
-            raise NetworkAdapterError(f"Cannot enumerate connections: {e}")
-        
-        return connections
-    
-    def find_connection_by_name(self, name: str) -> Optional[NetworkConnection]:
-        """
-        Поиск подключения по имени
-        
-        Args:
-            name: Имя подключения
-            
-        Returns:
-            Объект NetworkConnection или None
-        """
-        connections = self.get_network_connections()
-        for conn in connections:
-            if conn.name == name:
-                return conn
-        return None
-    
-    def is_sharing_installed(self) -> bool:
-        """
-        Проверка, поддерживает ли система ICS
-        
-        Returns:
-            True если ICS поддерживается
-        """
-        try:
-            with self._safe_com_context() as net_share:
-                return net_share.SharingInstalled
-        except Exception as e:
-            logger.error(f"Failed to check ICS support: {e}")
-            return False
-    
-    def enable_ics_com(self, public_connection_name: str, 
-                      private_connection_name: str = None) -> bool:
-        """
-        Включение ICS через COM интерфейс
-        
-        Args:
-            public_connection_name: Имя публичного подключения
-            private_connection_name: Имя приватного подключения (опционально)
-            
-        Returns:
-            True если операция успешна
-        """
-        try:
-            with self._safe_com_context() as net_share:
-                # Сначала отключаем все существующие подключения
-                self._disable_all_sharing_com()
+                pythoncom.CoUninitialize()
                 
-                # Настройка публичного подключения
-                for connection in net_share.EnumEveryConnection:
-                    props = net_share.NetConnectionProps(connection)
-                    config = net_share.INetSharingConfigurationForINetConnection(connection)
+            except Exception:
+                # Метод 2: Через реестр
+                try:
+                    result = subprocess.run([
+                        'reg', 'query', 
+                        'HKLM\\SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\Connections',
+                        '/s'
+                    ], capture_output=True, text=True, timeout=10)
                     
-                    if props.Name == public_connection_name:
-                        config.EnableSharing(0)  # 0 = публичное подключение
-                        logger.info(f"Enabled public sharing for: {public_connection_name}")
-                        
-                    elif private_connection_name and props.Name == private_connection_name:
-                        config.EnableSharing(1)  # 1 = приватное подключение
-                        logger.info(f"Enabled private sharing for: {private_connection_name}")
-                
-                # Запуск службы SharedAccess
-                self._ensure_shared_access_service()
-                
-                return True
-                
-        except Exception as e:
-            logger.error(f"Failed to enable ICS via COM: {e}")
-            raise ServiceError(f"ICS enable failed: {e}")
-    
-    def enable_ics_powershell(self, public_connection_name: str,
-                             private_connection_name: str = None) -> bool:
-        """
-        Включение ICS через PowerShell
-        
-        Args:
-            public_connection_name: Имя публичного подключения
-            private_connection_name: Имя приватного подключения (опционально)
+                    if result.returncode == 0:
+                        # Ищем записи о приватных подключениях
+                        lines = result.stdout.split('\n')
+                        for line in lines:
+                            if 'IsPrivate' in line and 'REG_DWORD' in line and '0x1' in line:
+                                # Найдена приватная сеть в реестре
+                                self.log_signal.emit("Найдена приватная сеть в реестре", "info")
+                                break
+                except Exception:
+                    pass
             
-        Returns:
-            True если операция успешна
-        """
-        try:
-            if self._ps_module_available:
-                # Использование модуля PSInternetConnectionSharing
-                if private_connection_name:
-                    command = f"Set-Ics -PublicConnectionName '{public_connection_name}' -PrivateConnectionName '{private_connection_name}'"
-                else:
-                    command = f"Set-Ics -PublicConnectionName '{public_connection_name}'"
-            else:
-                # Fallback к COM через PowerShell
-                command = f"""
-                $netShare = New-Object -ComObject HNetCfg.HNetShare
-                $connections = $netShare.EnumEveryConnection
-                
-                foreach ($conn in $connections) {{
-                    $props = $netShare.NetConnectionProps.Invoke($conn)
-                    $config = $netShare.INetSharingConfigurationForINetConnection.Invoke($conn)
+            # Метод 3: Через PowerShell как резерв
+            if not self.saved_private_connection:
+                try:
+                    ps_command = """
+                    Get-NetConnectionProfile | Where-Object {$_.NetworkCategory -eq 'Private'} | 
+                    Select-Object -First 1 -ExpandProperty InterfaceAlias
+                    """
                     
-                    if ($props.Name -eq '{public_connection_name}') {{
-                        $config.EnableSharing(0)
-                        Write-Host "Enabled public sharing for: $($props.Name)"
-                    }}
-                    {f'''
-                    elseif ($props.Name -eq '{private_connection_name}') {{
-                        $config.EnableSharing(1)
-                        Write-Host "Enabled private sharing for: $($props.Name)"
-                    }}
-                    ''' if private_connection_name else ''}
-                }}
-                
-                Start-Service SharedAccess -ErrorAction SilentlyContinue
-                """
+                    result = subprocess.run([
+                        'powershell', '-Command', ps_command
+                    ], capture_output=True, text=True, timeout=10)
+                    
+                    if result.returncode == 0 and result.stdout.strip():
+                        self.saved_private_connection = result.stdout.strip()
+                        self.log_signal.emit(f"Найдена приватная сеть: {self.saved_private_connection}", "info")
+                except Exception:
+                    pass
+                    
+        except Exception as e:
+            self.log_signal.emit(f"Ошибка сохранения настроек: {str(e)}", "warning")
+    
+    def _enable_sharing_with_restore(self):
+        """Включает общий доступ с восстановлением сохраненных настроек"""
+        try:
+            # Сначала включаем базовый sharing
+            self._enable_sharing_quick()
             
-            result = self._run_powershell_command(command)
-            
-            if result["success"]:
-                logger.info("ICS enabled successfully via PowerShell")
-                return True
+            # Затем восстанавливаем приватное подключение если оно было сохранено
+            if self.saved_private_connection:
+                time.sleep(1)  # Небольшая пауза
+                self.log_signal.emit(f"Восстанавливаем приватную сеть: {self.saved_private_connection}", "info")
+                self._restore_private_connection()
             else:
-                logger.error(f"PowerShell ICS enable failed: {result['error']}")
-                return False
+                self.log_signal.emit("Приватная сеть не была сохранена", "warning")
                 
         except Exception as e:
-            logger.error(f"Failed to enable ICS via PowerShell: {e}")
-            raise ServiceError(f"PowerShell ICS enable failed: {e}")
+            self.log_signal.emit(f"Ошибка восстановления: {str(e)}", "error")
     
-    def disable_ics_com(self) -> bool:
-        """
-        Отключение ICS через COM интерфейс
-        
-        Returns:
-            True если операция успешна
-        """
+    def _restore_private_connection(self):
+        """Восстанавливает сохраненное приватное подключение"""
         try:
-            return self._disable_all_sharing_com()
-        except Exception as e:
-            logger.error(f"Failed to disable ICS via COM: {e}")
-            raise ServiceError(f"ICS disable failed: {e}")
-    
-    def disable_ics_powershell(self) -> bool:
-        """
-        Отключение ICS через PowerShell
-        
-        Returns:
-            True если операция успешна
-        """
-        try:
-            if self._ps_module_available:
-                command = "Disable-Ics"
-            else:
-                command = """
-                $netShare = New-Object -ComObject HNetCfg.HNetShare
-                $connections = $netShare.EnumEveryConnection
+            # Метод 1: Через COM
+            try:
+                import win32com.client
+                import pythoncom
                 
-                foreach ($conn in $connections) {
-                    $config = $netShare.INetSharingConfigurationForINetConnection.Invoke($conn)
-                    if ($config.SharingEnabled) {
-                        $config.DisableSharing()
-                        Write-Host "Disabled sharing for connection"
-                    }
-                }
-                """
-            
-            result = self._run_powershell_command(command)
-            
-            if result["success"]:
-                logger.info("ICS disabled successfully via PowerShell")
-                return True
-            else:
-                logger.error(f"PowerShell ICS disable failed: {result['error']}")
-                return False
+                pythoncom.CoInitialize()
+                net_share = win32com.client.Dispatch("HNetCfg.HNetShare")
                 
-        except Exception as e:
-            logger.error(f"Failed to disable ICS via PowerShell: {e}")
-            raise ServiceError(f"PowerShell ICS disable failed: {e}")
-    
-    def _disable_all_sharing_com(self) -> bool:
-        """Отключение всех ICS подключений через COM"""
-        try:
-            with self._safe_com_context() as net_share:
+                found_and_set = False
                 for connection in net_share.EnumEveryConnection:
                     try:
+                        props = net_share.NetConnectionProps(connection)
                         config = net_share.INetSharingConfigurationForINetConnection(connection)
-                        if config.SharingEnabled:
-                            config.DisableSharing()
-                    except Exception as e:
-                        logger.warning(f"Failed to disable sharing for connection: {e}")
+                        
+                        # Если это нужное нам подключение
+                        if props.Name == self.saved_private_connection:
+                            # Настраиваем его как приватное
+                            if not config.SharingEnabled:
+                                config.EnableSharing(1)  # 1 = приватное подключение
+                                found_and_set = True
+                                self.log_signal.emit(f"Приватная сеть восстановлена: {props.Name}", "success")
+                                break
+                    except:
                         continue
+                        
+                if not found_and_set:
+                    self.log_signal.emit("Не удалось найти сохраненную сеть через COM", "warning")
+                    
+                pythoncom.CoUninitialize()
                 
-                logger.info("All ICS connections disabled")
-                return True
-                
+            except Exception:
+                # Метод 2: Через PowerShell
+                try:
+                    ps_command = f"""
+                    $connectionName = '{self.saved_private_connection}'
+                    Set-NetConnectionProfile -InterfaceAlias $connectionName -NetworkCategory Private -ErrorAction SilentlyContinue
+                    """
+                    
+                    result = subprocess.run([
+                        'powershell', '-Command', ps_command
+                    ], capture_output=True, text=True, timeout=15)
+                    
+                    if result.returncode == 0:
+                        self.log_signal.emit("Приватная сеть восстановлена через PowerShell", "success")
+                    else:
+                        self.log_signal.emit("Не удалось восстановить через PowerShell", "warning")
+                        
+                except Exception:
+                    self.log_signal.emit("Ошибка восстановления через PowerShell", "warning")
+                    
         except Exception as e:
-            logger.error(f"Failed to disable all ICS connections: {e}")
-            return False
+            self.log_signal.emit(f"Ошибка восстановления приватного подключения: {str(e)}", "error")
     
-    def _ensure_shared_access_service(self):
-        """Обеспечение запуска службы SharedAccess"""
+    def restart_rndis(self):
+        """Простой перезапуск RNDIS устройств"""
         try:
-            # Проверка статуса службы
-            service_status = self.get_shared_access_service_status()
-            
-            if service_status and service_status.get('state') != 'Running':
-                # Запуск службы
-                subprocess.run(['net', 'start', 'SharedAccess'], 
-                             check=True, capture_output=True)
-                logger.info("SharedAccess service started")
-                
-                # Настройка автозапуска
-                subprocess.run(['sc', 'config', 'SharedAccess', 'start=', 'auto'], 
-                             check=True, capture_output=True)
-                
+            self.log_signal.emit("Перезапуск RNDIS устройств...", "info")
+            threading.Thread(target=self._restart_rndis_simple, daemon=True).start()
         except Exception as e:
-            logger.warning(f"Failed to manage SharedAccess service: {e}")
+            self.log_signal.emit(f"Ошибка RNDIS: {str(e)}", "error")
     
-    def get_shared_access_service_status(self) -> Optional[Dict]:
-        """
-        Получение статуса службы SharedAccess
-        
-        Returns:
-            Словарь с информацией о службе
-        """
+    def _restart_rndis_simple(self):
+        """Простой перезапуск RNDIS"""
         try:
-            services = self._wmi_connection.Win32_Service(Name="SharedAccess")
-            for service in services:
-                return {
-                    'name': service.Name,
-                    'state': service.State,
-                    'start_mode': service.StartMode,
-                    'status': service.Status
-                }
-        except Exception as e:
-            logger.error(f"Failed to get SharedAccess service status: {e}")
-            return None
-    
-    def get_ics_status(self) -> Dict:
-        """
-        Получение полного статуса ICS
-        
-        Returns:
-            Словарь с информацией о статусе ICS
-        """
-        status = {
-            'sharing_installed': self.is_sharing_installed(),
-            'service_status': self.get_shared_access_service_status(),
-            'active_connections': [],
-            'method_availability': {
-                'com': self._net_share is not None,
-                'powershell_module': self._ps_module_available,
-                'wmi': self._wmi_connection is not None
-            }
-        }
-        
-        # Получение активных подключений с ICS
-        connections = self.get_network_connections()
-        for conn in connections:
-            if conn.sharing_enabled:
-                status['active_connections'].append({
-                    'name': conn.name,
-                    'type': 'Public' if conn.sharing_type == 0 else 'Private',
-                    'guid': conn.guid
-                })
-        
-        return status
-    
-    def create_virtual_adapter(self, adapter_name: str = "RndisAdapter") -> bool:
-        """
-        Создание виртуального сетевого адаптера
-        
-        Args:
-            adapter_name: Имя адаптера
+            # Поиск RNDIS устройств
+            result = subprocess.run([
+                'wmic', 'path', 'Win32_PnPEntity', 'where',
+                '"Name LIKE \'%RNDIS%\' OR Name LIKE \'%Android%\'"',
+                'get', 'DeviceID'
+            ], capture_output=True, text=True, shell=True, encoding='cp866', errors='ignore')
             
-        Returns:
-            True если адаптер создан успешно
-        """
-        try:
-            # Попытка создания Microsoft KM-TEST Loopback Adapter
-            command = f"""
-            $devcon = Get-Command devcon -ErrorAction SilentlyContinue
-            if ($devcon) {{
-                devcon install $env:windir\\inf\\netloop.inf *MSLOOP
-            }} else {{
-                pnputil /add-driver $env:windir\\inf\\netloop.inf /install
-            }}
-            """
-            
-            result = self._run_powershell_command(command)
-            
-            if result["success"]:
-                logger.info(f"Virtual adapter '{adapter_name}' created successfully")
-                return True
-            else:
-                logger.error(f"Failed to create virtual adapter: {result['error']}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Failed to create virtual adapter: {e}")
-            return False
-    
-    def configure_virtual_adapter(self, adapter_name: str, 
-                                 ip_address: str = "192.168.137.1",
-                                 subnet_mask: str = "255.255.255.0") -> bool:
-        """
-        Конфигурация виртуального адаптера
-        
-        Args:
-            adapter_name: Имя адаптера
-            ip_address: IP адрес
-            subnet_mask: Маска подсети
-            
-        Returns:
-            True если конфигурация успешна
-        """
-        try:
-            command = f"""
-            netsh interface ip set address name="{adapter_name}" static {ip_address} {subnet_mask}
-            netsh interface ip set dns name="{adapter_name}" static 8.8.8.8
-            """
-            
-            result = subprocess.run(command, shell=True, capture_output=True, text=True)
-            
+            device_ids = []
             if result.returncode == 0:
-                logger.info(f"Virtual adapter '{adapter_name}' configured with IP {ip_address}")
-                return True
+                lines = result.stdout.strip().split('\n')
+                for line in lines[1:]:
+                    if line.strip() and 'DeviceID' not in line:
+                        device_id = line.strip()
+                        if 'USB' in device_id:
+                            device_ids.append(device_id)
+            
+            if device_ids:
+                self.log_signal.emit(f"Найдено {len(device_ids)} RNDIS устройств", "info")
+                
+                # Отключаем
+                for device_id in device_ids:
+                    subprocess.run(f'pnputil /disable-device "{device_id}"', 
+                                 capture_output=True, shell=True)
+                
+                time.sleep(2)
+                
+                # Включаем
+                for device_id in device_ids:
+                    subprocess.run(f'pnputil /enable-device "{device_id}"', 
+                                 capture_output=True, shell=True)
+                
+                self.log_signal.emit("RNDIS устройства перезапущены", "success")
             else:
-                logger.error(f"Failed to configure adapter: {result.stderr}")
-                return False
+                self.log_signal.emit("RNDIS устройства не найдены", "warning")
                 
         except Exception as e:
-            logger.error(f"Failed to configure virtual adapter: {e}")
-            return False
-    
-    def enable_ics(self, public_connection_name: str,
-                   private_connection_name: str = None) -> bool:
-        """
-        Универсальный метод включения ICS
-        
-        Args:
-            public_connection_name: Имя публичного подключения
-            private_connection_name: Имя приватного подключения (опционально)
-            
-        Returns:
-            True если операция успешна
-        """
-        if self.prefer_powershell:
-            try:
-                return self.enable_ics_powershell(public_connection_name, private_connection_name)
-            except Exception as e:
-                logger.warning(f"PowerShell method failed, trying COM: {e}")
-                return self.enable_ics_com(public_connection_name, private_connection_name)
-        else:
-            try:
-                return self.enable_ics_com(public_connection_name, private_connection_name)
-            except Exception as e:
-                logger.warning(f"COM method failed, trying PowerShell: {e}")
-                return self.enable_ics_powershell(public_connection_name, private_connection_name)
-    
-    def disable_ics(self) -> bool:
-        """
-        Универсальный метод отключения ICS
-        
-        Returns:
-            True если операция успешна
-        """
-        if self.prefer_powershell:
-            try:
-                return self.disable_ics_powershell()
-            except Exception as e:
-                logger.warning(f"PowerShell method failed, trying COM: {e}")
-                return self.disable_ics_com()
-        else:
-            try:
-                return self.disable_ics_com()
-            except Exception as e:
-                logger.warning(f"COM method failed, trying PowerShell: {e}")
-                return self.disable_ics_powershell()
-    
-    def __del__(self):
-        """Деструктор для очистки ресурсов"""
-        try:
-            pythoncom.CoUninitialize()
-        except:
-            pass
-
-# Функция для проверки и получения прав администратора
-def ensure_admin_rights():
-    """Проверка и получение прав администратора"""
-    if not ctypes.windll.shell32.IsUserAnAdmin():
-        # Перезапуск с правами администратора
-        ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", sys.executable, " ".join(sys.argv), None, 1
-        )
-        return False
-    return True
-
-# Пример использования
-if __name__ == "__main__":
-    # Проверка прав администратора
-    if not ensure_admin_rights():
-        print("Перезапуск с правами администратора...")
-        sys.exit(0)
-    
-    try:
-        # Создание менеджера ICS
-        ics_manager = RndisManager(prefer_powershell=True)
-        
-        # Получение списка сетевых подключений
-        connections = ics_manager.get_network_connections()
-        print("Доступные сетевые подключения:")
-        for conn in connections:
-            print(f"  - {conn.name} (ICS: {conn.sharing_enabled})")
-        
-        # Проверка статуса ICS
-        status = ics_manager.get_ics_status()
-        print(f"\nСтатус ICS: {status}")
-        
-        # Включение ICS (пример)
-        public_conn = "Wi-Fi"  # Замените на ваше подключение
-        private_conn = "Ethernet"  # Замените на ваше подключение
-        
-        if ics_manager.enable_ics(public_conn, private_conn):
-            print(f"ICS включен: {public_conn} -> {private_conn}")
-        else:
-            print("Не удалось включить ICS")
-        
-        # Ожидание
-        time.sleep(2)
-        
-        # Отключение ICS
-        if ics_manager.disable_ics():
-            print("ICS отключен")
-        else:
-            print("Не удалось отключить ICS")
-            
-    except InsufficientPrivilegesError:
-        print("Ошибка: Требуются права администратора")
-    except NetworkAdapterError as e:
-        print(f"Ошибка сетевого адаптера: {e}")
-    except ServiceError as e:
-        print(f"Ошибка службы: {e}")
-    except IcsError as e:
-        print(f"Ошибка ICS: {e}")
-    except Exception as e:
-        print(f"Неожиданная ошибка: {e}")
+            self.log_signal.emit(f"Ошибка перезапуска RNDIS: {str(e)}", "error")
