@@ -1,11 +1,13 @@
 import datetime
 from PyQt6.QtWidgets import QFrame, QVBoxLayout, QTextEdit, QHBoxLayout, QPushButton
 from PyQt6.QtGui import QTextCursor
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from ui.styles import PANEL_STYLE, CONSOLE_STYLE
 from config import COLORS
 
 class ConsolePanel(QFrame):
+    activity_detected = pyqtSignal()
+    
     def __init__(self):
         super().__init__()
         self.init_ui()
@@ -17,7 +19,6 @@ class ConsolePanel(QFrame):
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(5)
         
-        # Кнопка очистки консоли
         button_layout = QHBoxLayout()
         button_layout.setContentsMargins(0, 0, 0, 0)
         
@@ -53,9 +54,17 @@ class ConsolePanel(QFrame):
         layout.addWidget(self.console)
         
     def clear_console(self):
-        """Очищает консоль"""
         self.console.clear()
         self.add_log("Консоль очищена", "info")
+        self.activity_detected.emit()
+        
+    def mousePressEvent(self, event):
+        self.activity_detected.emit()
+        super().mousePressEvent(event)
+        
+    def wheelEvent(self, event):
+        self.activity_detected.emit()
+        super().wheelEvent(event)
         
     def add_log(self, message, log_type="info"):
         timestamp = datetime.datetime.now().strftime("%H:%M:%S")

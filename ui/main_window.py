@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QScrollArea, QStackedWidget, QPushButton, QButtonGroup,
                              QSystemTrayIcon, QMenu, QMessageBox, QApplication)
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QPixmap, QAction
 from ui.styles import MAIN_WINDOW_STYLE
 from ui.widgets.header import HeaderWidget
@@ -18,60 +18,51 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.tray_icon = None
-        self.is_authenticated = False  # Флаг авторизации
+        self.is_authenticated = False
+        
+        self.idle_timer = QTimer()
+        self.idle_timer.setSingleShot(True)
+        self.idle_timer.timeout.connect(self.auto_lock)
+        self.idle_timeout = 10 * 60 * 1000
+        
         self.init_tray_icon()
         self.init_ui()
         
-        # Сразу прячем окно при запуске
         self.hide()
         
         self.console_panel.add_log("bobrik запущен в трее", "info")
         
     def init_tray_icon(self):
-        """Инициализация системного трея"""
-        # Проверяем, поддерживается ли системный трей
         if not QSystemTrayIcon.isSystemTrayAvailable():
             QMessageBox.critical(None, "Системный трей",
                                "Системный трей недоступен в этой системе.")
             return
         
-        # Создаем иконку для трея (простая черная точка)
         pixmap = QPixmap(16, 16)
         pixmap.fill(Qt.GlobalColor.black)
         icon = QIcon(pixmap)
         
-        # Создаем системный трей
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setIcon(icon)
         
-        # Создаем контекстное меню для трея
         tray_menu = QMenu()
         
-        # Действие "Показать"
         show_action = QAction("Показать bobrik", self)
         show_action.triggered.connect(self.show_window)
         tray_menu.addAction(show_action)
         
-        # Разделитель
         tray_menu.addSeparator()
         
-        # Действие "Выход"
         quit_action = QAction("Выход", self)
         quit_action.triggered.connect(self.quit_application)
         tray_menu.addAction(quit_action)
         
-        # Устанавливаем меню для трея
         self.tray_icon.setContextMenu(tray_menu)
-        
-        # Обработчик двойного клика по трею
         self.tray_icon.activated.connect(self.tray_icon_activated)
-        
-        # Показываем трей
         self.tray_icon.show()
         
     def init_ui(self):
         self.setWindowTitle(" ")
-        # Создаем полностью прозрачную иконку
         from PyQt6.QtGui import QPixmap
         pixmap = QPixmap(16, 16)
         pixmap.fill(Qt.GlobalColor.transparent)
@@ -123,6 +114,7 @@ class MainWindow(QMainWindow):
         content_layout.addLayout(tabs_layout, 2)
         
         self.console_panel = ConsolePanel()
+        self.console_panel.activity_detected.connect(self.reset_idle_timer)
         content_layout.addWidget(self.console_panel, 1)
         
         main_layout.addLayout(content_layout)
@@ -134,7 +126,6 @@ class MainWindow(QMainWindow):
             self.stacked_widget.setCurrentIndex(0)
         
     def create_tabs(self, layout):
-        """Создание вкладок"""
         tabs_data = [
             ("Система", SystemTab()),
             ("iiko", IikoTab()),
@@ -150,16 +141,35 @@ class MainWindow(QMainWindow):
             button.setStyleSheet(self.get_tab_button_style())
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             
+            button.clicked.connect(self.reset_idle_timer)
+            
             self.tab_buttons.addButton(button, i)
             layout.addWidget(button)
             self.stacked_widget.addWidget(widget)
             
             if hasattr(widget, 'log_signal'):
                 widget.log_signal.connect(self.add_log)
+            
+            self.connect_widget_activity(widget)
+    
+    def connect_widget_activity(self, widget):
+        widget.mousePressEvent = self.wrap_event(widget.mousePressEvent)
+        widget.keyPressEvent = self.wrap_event(widget.keyPressEvent)
+        
+        from PyQt6.QtWidgets import QPushButton
+        buttons = widget.findChildren(QPushButton)
+        for button in buttons:
+            button.clicked.connect(self.reset_idle_timer)
+    
+    def wrap_event(self, original_event):
+        def wrapped_event(event):
+            self.reset_idle_timer()
+            return original_event(event)
+        return wrapped_event
         
     def switch_tab(self, tab_id):
-        """Переключение вкладки"""
         self.stacked_widget.setCurrentIndex(tab_id)
+        self.reset_idle_timer()
         
     def get_scroll_style(self):
         return """
@@ -226,52 +236,70 @@ class MainWindow(QMainWindow):
         
     def add_log(self, message, log_type="info"):
         self.console_panel.add_log(message, log_type)
+        
+    def reset_idle_timer(self):
+        if self.is_authenticated and self.isVisible():
+            self.idle_timer.stop()
+            self.idle_timer.start(self.idle_timeout)
+    
+    def auto_lock(self):
+        if self.is_authenticated and self.isVisible():
+            self.console_panel.add_log("🔒 Автоблокировка: бездействие более 10 минут", "warning")
+            self.is_authenticated = False
+            self.hide_to_tray()
+            
+    def mousePressEvent(self, event):
+        self.reset_idle_timer()
+        super().mousePressEvent(event)
+        
+    def keyPressEvent(self, event):
+        self.reset_idle_timer()
+        super().keyPressEvent(event)
+        
+    def mouseMoveEvent(self, event):
+        self.reset_idle_timer()
+        super().mouseMoveEvent(event)
+        
+    def wheelEvent(self, event):
+        self.reset_idle_timer()
+        super().wheelEvent(event)
     
     def tray_icon_activated(self, reason):
-        """Обработчик событий системного трея"""
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self.show_window()
     
     def show_window(self):
-        """Показать окно программы"""
-        # Если еще не авторизован - показываем диалог PIN-кода
         if not self.is_authenticated:
             self.show_pin_dialog()
         else:
-            # Если уже авторизован - просто показываем окно
             self.show()
             self.raise_()
             self.activateWindow()
+            self.reset_idle_timer()
     
     def show_pin_dialog(self):
-        """Показывает диалог ввода PIN-кода"""
         pin_dialog = PinDialog(self)
         pin_dialog.pin_accepted.connect(self.on_pin_accepted)
         
-        # Показываем диалог
         if pin_dialog.exec() == pin_dialog.DialogCode.Accepted:
-            pass  # PIN принят, окно откроется через on_pin_accepted
+            pass
         else:
-            # Диалог закрыт без авторизации - ничего не делаем
             pass
     
     def on_pin_accepted(self):
-        """Обработчик успешной авторизации"""
         self.is_authenticated = True
         self.console_panel.add_log("Авторизация успешна", "success")
         
-        # Показываем главное окно
         self.show()
         self.raise_()
         self.activateWindow()
+        self.reset_idle_timer()
     
     def hide_to_tray(self):
-        """Скрыть окно в системный трей"""
+        self.idle_timer.stop()
         self.hide()
     
     def quit_application(self):
-        """Полный выход из программы"""
-        # Показываем диалог подтверждения
         msg = QMessageBox(self)
         msg.setWindowTitle('Выход из программы')
         msg.setText('Вы действительно хотите закрыть bobrik?')
@@ -284,34 +312,26 @@ class MainWindow(QMainWindow):
         msg.exec()
         
         if msg.clickedButton() == yes_button:
-            # Очищаем ресурсы
             for i in range(self.stacked_widget.count()):
                 widget = self.stacked_widget.widget(i)
                 if hasattr(widget, 'cleanup'):
                     widget.cleanup()
             
-            # Скрываем трей
             if self.tray_icon:
                 self.tray_icon.hide()
             
-            # Закрываем приложение
             QApplication.instance().quit()
         
     def closeEvent(self, event):
-        """Переопределяем событие закрытия окна"""
         if self.tray_icon and self.tray_icon.isVisible():
-            # Вместо закрытия - сворачиваем в трей
             event.ignore()
             self.hide_to_tray()
         else:
-            # Если трей недоступен - закрываем как обычно
             event.accept()
             
     def changeEvent(self, event):
-        """Обработка изменения состояния окна"""
         if event.type() == event.Type.WindowStateChange:
             if self.windowState() & Qt.WindowState.WindowMinimized:
-                # Если окно минимизировано - прячем в трей
                 if self.tray_icon and self.tray_icon.isVisible():
                     event.ignore()
                     self.hide_to_tray()
