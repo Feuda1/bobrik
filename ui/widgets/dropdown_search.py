@@ -284,7 +284,17 @@ class DropdownSearchWidget(QFrame):
             
             SearchItem("Помощник доступа", "Rhelper", 5,
                       keywords=["rhelper", "remote", "helper", "помощник"],
-                      category="программы", button_text="Rhelper")
+                      category="программы", button_text="Rhelper"),
+            
+            SearchItem("OrderCheck", "Проверка заказов iiko", 5,
+                      keywords=["order", "check", "заказ", "проверка", "iiko", "ордер"],
+                      category="программы", button_text="OrderCheck"),
+                      
+            # === ПЛАГИНЫ ===
+            SearchItem("Плагины iiko", "Установка плагинов iiko", 6,
+                      keywords=["плагин", "plugin", "iiko", "маркировка", "сбербанк", "эквайринг", 
+                               "alcohol", "marking", "sberbank", "dual", "connector", "arrivals"],
+                      category="плагины", button_text="🔄 Обновить список")
         ]
         
     def perform_search(self, query):

@@ -118,6 +118,11 @@ class InstallerTab(QWidget):
                 "name": "Rhelper",
                 "url": "https://github.com/Feuda1/Programs-for-Bobrik/releases/download/v1.0.0/remote-access-setup.exe",
                 "filename": "remote-access-setup.exe"
+            },
+            "ordercheck": {
+                "name": "OrderCheck",
+                "url": "https://clearbat.iiko.online/downloads/OrderCheck.exe",
+                "filename": "OrderCheck.exe"
             }
         }
         
@@ -332,7 +337,8 @@ class InstallerTab(QWidget):
             "Ассистент": "Assistant",
             "Rhelper": "Rhelper",
             "7-Zip": "7-Zip",
-            "Notepad++": "Notepad_Plus"
+            "Notepad++": "Notepad_Plus",
+            "OrderCheck": "OrderCheck"
         }
         return safe_names.get(program_name, program_name.replace(" ", "_"))
 
@@ -399,7 +405,7 @@ class InstallerTab(QWidget):
     def handle_executable(self, exe_path, program):
         try:
             # Определяем куда сохранять exe файлы
-            if program.get("filename") in ["Advanced_IP_Scanner_2.5.4594.1.exe", "AnyDesk.exe"]:
+            if program.get("filename") in ["Advanced_IP_Scanner_2.5.4594.1.exe", "AnyDesk.exe", "OrderCheck.exe"]:
                 # На рабочий стол
                 desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
                 final_path = os.path.join(desktop_path, program["filename"])

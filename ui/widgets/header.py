@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton
 from PyQt6.QtCore import QDateTime, QTimer, pyqtSignal, Qt
 from PyQt6.QtGui import QFocusEvent
 from ui.styles import HEADER_STYLE, LOGO_STYLE
@@ -8,6 +8,7 @@ class HeaderWidget(QFrame):
     search_focus_gained = pyqtSignal()
     search_focus_lost = pyqtSignal()
     search_position_requested = pyqtSignal(int, int)  # x, y координаты
+    exit_requested = pyqtSignal()  # Сигнал для выхода
     
     def __init__(self):
         super().__init__()
@@ -70,6 +71,29 @@ class HeaderWidget(QFrame):
             }
         """)
         
+        # Кнопка выхода
+        self.exit_button = QPushButton("✕")
+        self.exit_button.setFixedSize(35, 35)
+        self.exit_button.clicked.connect(self.exit_requested.emit)
+        self.exit_button.setStyleSheet("""
+            QPushButton {
+                background-color: #1a1a1a;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                color: #808080;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #ef4444;
+                border-color: #ef4444;
+                color: #ffffff;
+            }
+            QPushButton:pressed {
+                background-color: #dc2626;
+            }
+        """)
+        
         self.update_time()
         timer = QTimer(self)
         timer.timeout.connect(self.update_time)
@@ -81,6 +105,7 @@ class HeaderWidget(QFrame):
         layout.addWidget(self.search_input)
         layout.addStretch()
         layout.addWidget(self.time_label)
+        layout.addWidget(self.exit_button)
         
     def on_search_text_changed(self, text):
         """Обработка изменения текста в поиске"""

@@ -12,7 +12,7 @@ from ui.tabs.iiko_tab import IikoTab
 from ui.tabs.logs_tab import LogsTab
 from ui.tabs.folders_tab import FoldersTab
 from ui.tabs.network_tab import NetworkTab
-from ui.widgets.pin_dialog import PinDialog
+from ui.widgets.touch_auth_dialog import TouchAuthDialog
 from config import WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT
 
 try:
@@ -20,6 +20,12 @@ try:
     INSTALLER_AVAILABLE = True
 except ImportError:
     INSTALLER_AVAILABLE = False
+
+try:
+    from ui.tabs.plugins_tab import PluginsTab
+    PLUGINS_AVAILABLE = True
+except ImportError:
+    PLUGINS_AVAILABLE = False
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -87,6 +93,7 @@ class MainWindow(QMainWindow):
         self.header.search_focus_gained.connect(self.on_search_focus_gained)
         self.header.search_focus_lost.connect(self.on_search_focus_lost)
         self.header.search_position_requested.connect(self.position_dropdown_search)
+        self.header.exit_requested.connect(self.quit_application)
         main_layout.addWidget(self.header)
         
         # Основной контент
@@ -162,6 +169,9 @@ class MainWindow(QMainWindow):
         
         if INSTALLER_AVAILABLE:
             tabs_data.append(("Программы", InstallerTab()))
+            
+        if PLUGINS_AVAILABLE:
+            tabs_data.append(("Плагины", PluginsTab()))
         
         for i, (name, widget) in enumerate(tabs_data):
             button = QPushButton(name)
@@ -322,10 +332,10 @@ class MainWindow(QMainWindow):
             self.reset_idle_timer()
     
     def show_pin_dialog(self):
-        pin_dialog = PinDialog(self)
-        pin_dialog.pin_accepted.connect(self.on_pin_accepted)
+        auth_dialog = TouchAuthDialog(self)
+        auth_dialog.auth_accepted.connect(self.on_pin_accepted)
         
-        if pin_dialog.exec() == pin_dialog.DialogCode.Accepted:
+        if auth_dialog.exec() == auth_dialog.DialogCode.Accepted:
             pass
         else:
             pass
@@ -345,27 +355,16 @@ class MainWindow(QMainWindow):
         self.hide()
     
     def quit_application(self):
-        msg = QMessageBox(self)
-        msg.setWindowTitle('Выход из программы')
-        msg.setText('Вы действительно хотите закрыть bobrik?')
-        msg.setIcon(QMessageBox.Icon.Question)
+        """Выход из программы без подтверждения"""
+        for i in range(self.stacked_widget.count()):
+            widget = self.stacked_widget.widget(i)
+            if hasattr(widget, 'cleanup'):
+                widget.cleanup()
         
-        yes_button = msg.addButton('Да', QMessageBox.ButtonRole.YesRole)
-        no_button = msg.addButton('Нет', QMessageBox.ButtonRole.NoRole)
-        msg.setDefaultButton(no_button)
+        if self.tray_icon:
+            self.tray_icon.hide()
         
-        msg.exec()
-        
-        if msg.clickedButton() == yes_button:
-            for i in range(self.stacked_widget.count()):
-                widget = self.stacked_widget.widget(i)
-                if hasattr(widget, 'cleanup'):
-                    widget.cleanup()
-            
-            if self.tray_icon:
-                self.tray_icon.hide()
-            
-            QApplication.instance().quit()
+        QApplication.instance().quit()
         
     def closeEvent(self, event):
         if self.tray_icon and self.tray_icon.isVisible():
@@ -448,12 +447,8 @@ class MainWindow(QMainWindow):
         """Обработка результата поиска"""
         # Получаем информацию о выбранном элементе
         search_item = None
-        for item in self.dropdown_search.search_items:
-            if item.tab_index == tab_index:
-                # Находим точный элемент по последнему выбору
-                if hasattr(self.dropdown_search, '_last_selected_item'):
-                    search_item = self.dropdown_search._last_selected_item
-                    break
+        if hasattr(self.dropdown_search, '_last_selected_item'):
+            search_item = self.dropdown_search._last_selected_item
         
         # Переключиться на нужную вкладку
         if 0 <= tab_index < len(self.tab_buttons.buttons()):
@@ -461,7 +456,7 @@ class MainWindow(QMainWindow):
             self.stacked_widget.setCurrentIndex(tab_index)
             
             # Показать сообщение о переходе
-            tab_names = ["Система", "iiko", "Логи", "Папки", "Сеть", "Программы"]
+            tab_names = ["Система", "iiko", "Логи", "Папки", "Сеть", "Программы", "Плагины"]
             tab_name = tab_names[tab_index] if tab_index < len(tab_names) else "Неизвестно"
             self.console_panel.add_log(f"📍 Переход: {tab_name}", "info")
             
@@ -513,7 +508,6 @@ class MainWindow(QMainWindow):
                 font-size: 11px;
                 font-weight: 600;
                 padding: 4px 2px;
-                animation: pulse 1s ease-in-out infinite;
             }
             QPushButton:hover {
                 background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
