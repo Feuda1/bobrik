@@ -13,6 +13,7 @@ from ui.tabs.logs_tab import LogsTab
 from ui.tabs.folders_tab import FoldersTab
 from ui.tabs.network_tab import NetworkTab
 from ui.widgets.touch_auth_dialog import TouchAuthDialog
+from managers.update_manager import SimpleUpdateManager
 from config import WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT
 
 try:
@@ -44,6 +45,11 @@ class MainWindow(QMainWindow):
         self.hide()
         
         self.console_panel.add_log("bobrik запущен в трее", "info")
+        
+        # Менеджер обновлений
+        self.update_manager = SimpleUpdateManager(self)
+        self.update_manager.log_signal.connect(self.add_log)
+        self.update_manager.set_github_repo("Feuda1/bobrik")
         
     def init_tray_icon(self):
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -94,6 +100,7 @@ class MainWindow(QMainWindow):
         self.header.search_focus_lost.connect(self.on_search_focus_lost)
         self.header.search_position_requested.connect(self.position_dropdown_search)
         self.header.exit_requested.connect(self.quit_application)
+        self.header.check_updates_requested.connect(self.check_updates)
         main_layout.addWidget(self.header)
         
         # Основной контент
@@ -393,6 +400,11 @@ class MainWindow(QMainWindow):
         if self.is_authenticated:
             self.header.focus_search()
             self.console_panel.add_log("🔍 Поиск активирован (Ctrl+K)", "info")
+    
+    def check_updates(self):
+        """Проверяет обновления"""
+        self.update_manager.check_for_updates()
+        self.reset_idle_timer()
     
     # === ОБРАБОТЧИКИ ПОИСКА ===
     

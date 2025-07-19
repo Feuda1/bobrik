@@ -55,7 +55,7 @@ class SystemTab(QWidget):
         layout.addWidget(title)
         
         buttons_container = QWidget()
-        buttons_container.setFixedSize(645, 200)
+        buttons_container.setFixedSize(750, 200)  # Увеличиваем ширину для 5 кнопок
         buttons_container.setStyleSheet("QWidget { background-color: transparent; }")
         
         grid = QGridLayout(buttons_container)
@@ -66,17 +66,40 @@ class SystemTab(QWidget):
         self.touchscreen_button.clicked.connect(self.toggle_touchscreen)
         grid.addWidget(self.touchscreen_button, 0, 0)
         
+        # Новая кнопка перезапуска сенсорного экрана
+        touchscreen_reboot_button = self.create_button("Ребут\nсенсорного", False)
+        touchscreen_reboot_button.clicked.connect(self.reboot_touchscreen)
+        touchscreen_reboot_button.setStyleSheet("""
+            QPushButton {
+                background-color: #1e40af;
+                border: 1px solid #3b82f6;
+                border-radius: 4px;
+                color: #3b82f6;
+                font-size: 11px;
+                font-weight: 500;
+                padding: 4px 2px;
+            }
+            QPushButton:hover {
+                background-color: #1d4ed8;
+                border-color: #60a5fa;
+            }
+            QPushButton:pressed {
+                background-color: #1e3a8a;
+            }
+        """)
+        grid.addWidget(touchscreen_reboot_button, 0, 1)
+        
         self.restart_button = self.create_button("Перезагрузка\nсистемы", False)
         self.restart_button.clicked.connect(self.request_reboot)
-        grid.addWidget(self.restart_button, 0, 1)
+        grid.addWidget(self.restart_button, 0, 2)
         
         cleanup_button = self.create_button("Очистка\nTemp файлов", False)
         cleanup_button.clicked.connect(self.clean_temp_files)
-        grid.addWidget(cleanup_button, 0, 2)
+        grid.addWidget(cleanup_button, 0, 3)
         
         com_button = self.create_button("Перезапуск\nCOM портов", False)
         com_button.clicked.connect(self.restart_com_ports)
-        grid.addWidget(com_button, 0, 3)
+        grid.addWidget(com_button, 0, 4)
         
         services_button = self.create_button("Управление\nслужбами", False)
         services_button.clicked.connect(self.open_services)
@@ -96,15 +119,15 @@ class SystemTab(QWidget):
         
         print_restart_button = self.create_button("Перезапуск\nдисп. печати", False)
         print_restart_button.clicked.connect(self.restart_print_spooler)
-        grid.addWidget(print_restart_button, 2, 0)
+        grid.addWidget(print_restart_button, 1, 4)
         
         print_clear_button = self.create_button("Очистка\nочереди печати", False)
         print_clear_button.clicked.connect(self.clear_print_queue)
-        grid.addWidget(print_clear_button, 2, 1)
+        grid.addWidget(print_clear_button, 2, 0)
         
         tls_button = self.create_button("Настройка\nTLS 1.2", False)
         tls_button.clicked.connect(self.configure_tls)
-        grid.addWidget(tls_button, 2, 2)
+        grid.addWidget(tls_button, 2, 1)
         
         rndis_button = self.create_button("Перезапуск\nRNDIS", False)
         rndis_button.clicked.connect(self.toggle_internet_sharing)
@@ -126,7 +149,7 @@ class SystemTab(QWidget):
                 background-color: #1e3a8a;
             }
         """)
-        grid.addWidget(rndis_button, 2, 3)
+        grid.addWidget(rndis_button, 2, 2)
         
         layout.addWidget(buttons_container)
         layout.addStretch()
@@ -217,6 +240,10 @@ class SystemTab(QWidget):
         
     def toggle_touchscreen(self):
         self.touchscreen_manager.toggle_touchscreen()
+        
+    def reboot_touchscreen(self):
+        """Перезапускает сенсорный экран"""
+        self.touchscreen_manager.reboot_touchscreen()
         
     def request_reboot(self):
         self.reboot_manager.request_reboot()

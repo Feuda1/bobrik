@@ -82,6 +82,14 @@ class PluginParser(QThread):
         except Exception as e:
             raise Exception(f"Ошибка парсинга: {str(e)}")
 
+import os
+import shutil
+import zipfile
+import subprocess
+import tempfile
+import time
+from PyQt6.QtCore import QThread, pyqtSignal
+
 class PluginDownloader(QThread):
     log_signal = pyqtSignal(str, str)
     progress_signal = pyqtSignal(int)
@@ -94,7 +102,9 @@ class PluginDownloader(QThread):
         
     def run(self):
         try:
-            if not HAS_REQUIREMENTS:
+            try:
+                import requests
+            except ImportError:
                 self.log_signal.emit("Требуются библиотеки requests и beautifulsoup4", "error")
                 self.finished_signal.emit("", False)
                 return
@@ -140,33 +150,142 @@ class PluginDownloader(QThread):
             self.finished_signal.emit("", False)
     
     def extract_plugin(self, zip_path):
-        """Извлекает плагин и снимает блокировку"""
+        """Извлекает плагин с улучшенной обработкой заблокированных файлов"""
         try:
             downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
             extract_dir = os.path.join(downloads_path, f"{self.plugin_name}_{self.version_info['name']}")
             
+            # Удаляем старую папку если существует
             if os.path.exists(extract_dir):
-                shutil.rmtree(extract_dir)
+                self.log_signal.emit("Удаляем старую папку плагина...", "info")
+                self._force_remove_directory(extract_dir)
             
-            os.makedirs(extract_dir)
+            # Создаем новую папку
+            os.makedirs(extract_dir, exist_ok=True)
             
-            # Извлекаем архив
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(extract_dir)
+            # Извлекаем архив с обработкой ошибок
+            self.log_signal.emit("Извлечение архива...", "info")
+            extracted_files = 0
+            failed_files = []
             
-            self.log_signal.emit(f"Архив извлечен в {extract_dir}", "info")
+            try:
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    file_list = zip_ref.infolist()
+                    
+                    for file_info in file_list:
+                        try:
+                            # Извлекаем файл
+                            zip_ref.extract(file_info, extract_dir)
+                            extracted_files += 1
+                            
+                        except Exception as extract_error:
+                            # Если не удалось извлечь файл, пробуем альтернативный способ
+                            failed_files.append(file_info.filename)
+                            self.log_signal.emit(f"Проблема с файлом {file_info.filename}, пробуем альтернативный способ...", "warning")
+                            
+                            try:
+                                # Альтернативный способ - читаем и записываем вручную
+                                file_data = zip_ref.read(file_info.filename)
+                                file_path = os.path.join(extract_dir, file_info.filename)
+                                
+                                # Создаем директорию если нужно
+                                os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                                
+                                # Записываем файл с несколькими попытками
+                                self._write_file_with_retry(file_path, file_data)
+                                extracted_files += 1
+                                failed_files.remove(file_info.filename)
+                                
+                            except Exception as retry_error:
+                                self.log_signal.emit(f"Не удалось извлечь {file_info.filename}: {str(retry_error)}", "warning")
+                        
+            except zipfile.BadZipFile:
+                self.log_signal.emit("Поврежденный архив", "error")
+                return
+            except Exception as e:
+                self.log_signal.emit(f"Ошибка при чтении архива: {str(e)}", "error")
+                return
             
-            # Снимаем блокировку с всех файлов
-            self.unblock_files(extract_dir)
-            
-            # Удаляем архив
-            os.remove(zip_path)
-            
-            # Открываем папку
-            subprocess.Popen(['explorer', extract_dir])
-            
+            # Результаты извлечения
+            if extracted_files > 0:
+                self.log_signal.emit(f"Успешно извлечено {extracted_files} файлов", "success")
+                
+                if failed_files:
+                    self.log_signal.emit(f"Не удалось извлечь {len(failed_files)} файлов", "warning")
+                    for failed_file in failed_files[:5]:  # Показываем только первые 5
+                        self.log_signal.emit(f"  - {failed_file}", "warning")
+                    if len(failed_files) > 5:
+                        self.log_signal.emit(f"  ... и еще {len(failed_files) - 5} файлов", "warning")
+                
+                # Снимаем блокировку с извлеченных файлов
+                self.unblock_files(extract_dir)
+                
+                # Удаляем архив
+                try:
+                    os.remove(zip_path)
+                    self.log_signal.emit("Временный архив удален", "info")
+                except:
+                    self.log_signal.emit("Не удалось удалить временный архив", "warning")
+                
+                # Открываем папку
+                try:
+                    subprocess.Popen(['explorer', extract_dir])
+                    self.log_signal.emit(f"Папка плагина открыта: {os.path.basename(extract_dir)}", "success")
+                except:
+                    self.log_signal.emit(f"Плагин извлечен в: {extract_dir}", "success")
+            else:
+                self.log_signal.emit("Не удалось извлечь файлы из архива", "error")
+                
         except Exception as e:
             self.log_signal.emit(f"Ошибка извлечения: {str(e)}", "error")
+    
+    def _force_remove_directory(self, directory_path):
+        """Принудительно удаляет директорию с несколькими попытками"""
+        max_attempts = 3
+        
+        for attempt in range(max_attempts):
+            try:
+                if os.path.exists(directory_path):
+                    # Сначала пробуем обычное удаление
+                    shutil.rmtree(directory_path)
+                    return
+            except (PermissionError, OSError) as e:
+                if attempt < max_attempts - 1:
+                    self.log_signal.emit(f"Попытка {attempt + 1}: не удалось удалить папку, повторяем...", "warning")
+                    time.sleep(1)
+                    
+                    # Пробуем снять атрибуты только для чтения
+                    try:
+                        for root, dirs, files in os.walk(directory_path):
+                            for file in files:
+                                file_path = os.path.join(root, file)
+                                try:
+                                    os.chmod(file_path, 0o777)
+                                except:
+                                    pass
+                    except:
+                        pass
+                else:
+                    # Если все попытки неудачны, переименовываем папку
+                    try:
+                        temp_name = f"{directory_path}_old_{int(time.time())}"
+                        os.rename(directory_path, temp_name)
+                        self.log_signal.emit(f"Папка переименована в {os.path.basename(temp_name)}", "warning")
+                    except:
+                        self.log_signal.emit("Не удалось удалить старую папку, продолжаем...", "warning")
+    
+    def _write_file_with_retry(self, file_path, data, max_attempts=3):
+        """Записывает файл с несколькими попытками"""
+        for attempt in range(max_attempts):
+            try:
+                with open(file_path, 'wb') as f:
+                    f.write(data)
+                return
+            except (PermissionError, OSError) as e:
+                if attempt < max_attempts - 1:
+                    time.sleep(0.5)  # Небольшая пауза
+                else:
+                    raise e
     
     def unblock_files(self, directory):
         """Снимает блокировку Windows с файлов"""
@@ -178,8 +297,8 @@ class PluginDownloader(QThread):
                     file_path = os.path.join(root, file)
                     try:
                         # Снимаем атрибут блокировки через PowerShell
-                        cmd = f'powershell -Command "Unblock-File -Path \'{file_path}\'"'
-                        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                        cmd = f'powershell -Command "Unblock-File -Path \'{file_path}\' -ErrorAction SilentlyContinue"'
+                        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
                         if result.returncode == 0:
                             unblocked_count += 1
                     except Exception:

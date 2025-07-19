@@ -9,6 +9,7 @@ class HeaderWidget(QFrame):
     search_focus_lost = pyqtSignal()
     search_position_requested = pyqtSignal(int, int)  # x, y координаты
     exit_requested = pyqtSignal()  # Сигнал для выхода
+    check_updates_requested = pyqtSignal()  # Сигнал для проверки обновлений
     
     def __init__(self):
         super().__init__()
@@ -26,7 +27,7 @@ class HeaderWidget(QFrame):
         logo_label.setStyleSheet(LOGO_STYLE)
         
         # Версия
-        version_label = QLabel("v1.0")
+        version_label = QLabel("v1.0.0")
         version_label.setStyleSheet("""
             QLabel {
                 color: #606060;
@@ -71,6 +72,30 @@ class HeaderWidget(QFrame):
             }
         """)
         
+        # Кнопка проверки обновлений
+        self.update_button = QPushButton("🔄")
+        self.update_button.setFixedSize(35, 35)
+        self.update_button.setToolTip("Проверить обновления")
+        self.update_button.clicked.connect(self.check_updates_requested.emit)
+        self.update_button.setStyleSheet("""
+            QPushButton {
+                background-color: #1a1a1a;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                color: #808080;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #10b981;
+                border-color: #10b981;
+                color: #ffffff;
+            }
+            QPushButton:pressed {
+                background-color: #059669;
+            }
+        """)
+        
         # Кнопка выхода
         self.exit_button = QPushButton("✕")
         self.exit_button.setFixedSize(35, 35)
@@ -105,6 +130,7 @@ class HeaderWidget(QFrame):
         layout.addWidget(self.search_input)
         layout.addStretch()
         layout.addWidget(self.time_label)
+        layout.addWidget(self.update_button)
         layout.addWidget(self.exit_button)
         
     def on_search_text_changed(self, text):

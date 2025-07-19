@@ -1,6 +1,8 @@
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QGridLayout
 from PyQt6.QtCore import Qt, pyqtSignal
 from managers.logs_manager import LogsManager
+import subprocess
+import os
 
 class FoldersTab(QWidget):
     log_signal = pyqtSignal(str, str)
@@ -28,7 +30,7 @@ class FoldersTab(QWidget):
         layout.addWidget(title)
         
         buttons_container = QWidget()
-        buttons_container.setFixedSize(435, 150)
+        buttons_container.setFixedSize(540, 150)  # Увеличиваем ширину для 4 кнопок
         buttons_container.setStyleSheet("QWidget { background-color: transparent; }")
         
         grid = QGridLayout(buttons_container)
@@ -47,6 +49,11 @@ class FoldersTab(QWidget):
         logs_button = self.create_button("Logs", False)
         logs_button.clicked.connect(lambda: self.open_folder("logs"))
         grid.addWidget(logs_button, 0, 2)
+        
+        # Новая кнопка для папки плагинов
+        plugins_folder_button = self.create_button("Plugins", False)
+        plugins_folder_button.clicked.connect(self.open_plugins_folder)
+        grid.addWidget(plugins_folder_button, 0, 3)
         
         layout.addWidget(buttons_container)
         layout.addStretch()
@@ -94,4 +101,22 @@ class FoldersTab(QWidget):
         button.setStyleSheet(style)
         
     def open_folder(self, folder_type):
+        """Открывает стандартные папки через LogsManager"""
         self.logs_manager.open_folder(folder_type)
+        
+    def open_plugins_folder(self):
+        """Открывает папку плагинов iiko"""
+        try:
+            plugins_path = r"C:\Program Files\iiko\iikoRMS\Front.Net\Plugins"
+            
+            self.log_signal.emit("Открываем папку плагинов iiko...", "info")
+            
+            if not os.path.exists(plugins_path):
+                self.log_signal.emit(f"Папка плагинов не найдена: {plugins_path}", "error")
+                return
+                
+            subprocess.Popen(['explorer', plugins_path])
+            self.log_signal.emit("Папка плагинов открыта", "success")
+            
+        except Exception as e:
+            self.log_signal.emit(f"Ошибка при открытии папки плагинов: {str(e)}", "error")

@@ -14,14 +14,14 @@ class TouchAuthDialog(QDialog):
         
     def init_ui(self):
         self.setWindowTitle("bobrik - Авторизация")
-        self.setFixedSize(480, 580)  # Увеличиваем размер окна
+        self.setFixedSize(380, 520)  # Еще компактнее
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         
         self.center_window()
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(40, 40, 40, 40)  # Увеличиваем отступы
-        main_layout.setSpacing(30)  # Увеличиваем расстояния
+        main_layout.setContentsMargins(25, 25, 25, 25)
+        main_layout.setSpacing(12)
         
         # Заголовок
         title_label = QLabel("bobrik")
@@ -29,9 +29,9 @@ class TouchAuthDialog(QDialog):
         title_label.setStyleSheet("""
             QLabel {
                 color: #ffffff;
-                font-size: 28px;
+                font-size: 26px;
                 font-weight: 600;
-                padding: 10px;
+                padding: 8px;
             }
         """)
         main_layout.addWidget(title_label)
@@ -41,30 +41,31 @@ class TouchAuthDialog(QDialog):
         desc_label.setStyleSheet("""
             QLabel {
                 color: #808080;
-                font-size: 16px;
-                margin-bottom: 10px;
+                font-size: 15px;
+                margin-bottom: 3px;
             }
         """)
         main_layout.addWidget(desc_label)
         
         # PIN индикаторы
         pin_container = QWidget()
+        pin_container.setFixedHeight(55)
         pin_layout = QHBoxLayout(pin_container)
-        pin_layout.setSpacing(20)  # Хорошие отступы между индикаторами
-        pin_layout.setContentsMargins(0, 0, 0, 0)
+        pin_layout.setSpacing(12)
+        pin_layout.setContentsMargins(0, 5, 0, 5)
         
         self.pin_indicators = []
         for i in range(4):
             indicator = QLabel("●")
             indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            indicator.setFixedSize(50, 50)
+            indicator.setFixedSize(40, 40)
             indicator.setStyleSheet("""
                 QLabel {
                     background-color: #141414;
                     border: 1px solid #1f1f1f;
-                    border-radius: 8px;
+                    border-radius: 6px;
                     color: #404040;
-                    font-size: 18px;
+                    font-size: 14px;
                     font-weight: 500;
                 }
             """)
@@ -77,30 +78,30 @@ class TouchAuthDialog(QDialog):
         # Статус
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setFixedHeight(25)
+        self.status_label.setFixedHeight(18)
         self.status_label.setStyleSheet("""
             QLabel {
                 color: #808080;
-                font-size: 14px;
+                font-size: 13px;
                 font-weight: 500;
             }
         """)
         main_layout.addWidget(self.status_label)
         
-        # Клавиатура с квадратными кнопками
+        # Клавиатура
         keypad_frame = QFrame()
+        keypad_frame.setFixedHeight(280)  # Компактная клавиатура
         keypad_frame.setStyleSheet("""
             QFrame {
                 background-color: #141414;
                 border: 1px solid #1f1f1f;
                 border-radius: 8px;
-                padding: 25px;
             }
         """)
         
         keypad_layout = QGridLayout(keypad_frame)
-        keypad_layout.setSpacing(20)  # Увеличиваем отступы между кнопками
-        keypad_layout.setContentsMargins(25, 25, 25, 25)
+        keypad_layout.setSpacing(10)  # Меньшие отступы
+        keypad_layout.setContentsMargins(18, 18, 18, 18)
         
         # Создаем квадратные кнопки цифр
         self.number_buttons = []
@@ -118,7 +119,7 @@ class TouchAuthDialog(QDialog):
         
         # Кнопка очистки
         clear_button = QPushButton("⌫")
-        clear_button.setFixedSize(90, 90)  # Увеличиваем размер кнопки очистки
+        clear_button.setFixedSize(65, 65)
         clear_button.clicked.connect(self.clear_pin)
         clear_button.setStyleSheet("""
             QPushButton {
@@ -126,7 +127,7 @@ class TouchAuthDialog(QDialog):
                 border: 1px solid #2a2a2a;
                 border-radius: 8px;
                 color: #808080;
-                font-size: 24px;
+                font-size: 18px;
                 font-weight: 500;
             }
             QPushButton:hover {
@@ -146,13 +147,14 @@ class TouchAuthDialog(QDialog):
             QDialog {
                 background-color: #0a0a0a;
                 border: 1px solid #1f1f1f;
+                border-radius: 8px;
             }
         """)
         
     def create_number_button(self, number):
         """Создает квадратную кнопку цифры"""
         button = QPushButton(number)
-        button.setFixedSize(90, 90)  # Увеличиваем размер кнопок
+        button.setFixedSize(65, 65)  # Компактные кнопки
         button.clicked.connect(lambda: self.add_digit(number))
         button.setStyleSheet("""
             QPushButton {
@@ -160,8 +162,8 @@ class TouchAuthDialog(QDialog):
                 border: 1px solid #2a2a2a;
                 border-radius: 8px;
                 color: #e0e0e0;
-                font-size: 24px;
-                font-weight: 500;
+                font-size: 20px;
+                font-weight: 600;
             }
             QPushButton:hover {
                 background-color: #262626;
@@ -169,7 +171,8 @@ class TouchAuthDialog(QDialog):
                 color: #ffffff;
             }
             QPushButton:pressed {
-                background-color: #1a1a1a;
+                background-color: #333333;
+                border-color: #4a4a4a;
             }
         """)
         return button
@@ -212,9 +215,9 @@ class TouchAuthDialog(QDialog):
                     QLabel {
                         background-color: #2a2a2a;
                         border: 1px solid #4a4a4a;
-                        border-radius: 8px;
+                        border-radius: 6px;
                         color: #ffffff;
-                        font-size: 18px;
+                        font-size: 14px;
                         font-weight: 500;
                     }
                 """)
@@ -223,9 +226,9 @@ class TouchAuthDialog(QDialog):
                     QLabel {
                         background-color: #141414;
                         border: 1px solid #1f1f1f;
-                        border-radius: 8px;
+                        border-radius: 6px;
                         color: #404040;
-                        font-size: 18px;
+                        font-size: 14px;
                         font-weight: 500;
                     }
                 """)
@@ -241,12 +244,12 @@ class TouchAuthDialog(QDialog):
             
     def show_success(self):
         """Показывает успешную авторизацию"""
-        self.status_label.setText("Доступ разрешен")
+        self.status_label.setText("✅ Доступ разрешен")
         self.status_label.setStyleSheet("""
             QLabel {
                 color: #10b981;
-                font-size: 14px;
-                font-weight: 500;
+                font-size: 13px;
+                font-weight: 600;
             }
         """)
         
@@ -255,21 +258,21 @@ class TouchAuthDialog(QDialog):
                 QLabel {
                     background-color: #065f46;
                     border: 1px solid #10b981;
-                    border-radius: 8px;
+                    border-radius: 6px;
                     color: #10b981;
-                    font-size: 18px;
+                    font-size: 14px;
                     font-weight: 500;
                 }
             """)
             
     def show_error(self):
         """Показывает ошибку"""
-        self.status_label.setText("Неверный PIN-код")
+        self.status_label.setText("❌ Неверный PIN-код")
         self.status_label.setStyleSheet("""
             QLabel {
                 color: #ef4444;
-                font-size: 14px;
-                font-weight: 500;
+                font-size: 13px;
+                font-weight: 600;
             }
         """)
         
@@ -278,9 +281,9 @@ class TouchAuthDialog(QDialog):
                 QLabel {
                     background-color: #7f1d1d;
                     border: 1px solid #ef4444;
-                    border-radius: 8px;
+                    border-radius: 6px;
                     color: #ef4444;
-                    font-size: 18px;
+                    font-size: 14px;
                     font-weight: 500;
                 }
             """)
