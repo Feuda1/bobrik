@@ -2,10 +2,11 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QScrollArea, QStackedWidget, QPushButton, QButtonGroup,
                              QSystemTrayIcon, QMenu, QMessageBox, QApplication)
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon, QPixmap, QAction
+from PyQt6.QtGui import QIcon, QPixmap, QAction, QKeySequence, QShortcut
 from ui.styles import MAIN_WINDOW_STYLE
 from ui.widgets.header import HeaderWidget
 from ui.widgets.console_panel import ConsolePanel
+from ui.widgets.global_search import GlobalSearchWidget
 from ui.tabs.system_tab import SystemTab
 from ui.tabs.iiko_tab import IikoTab
 from ui.tabs.logs_tab import LogsTab
@@ -13,6 +14,12 @@ from ui.tabs.folders_tab import FoldersTab
 from ui.tabs.network_tab import NetworkTab
 from ui.widgets.pin_dialog import PinDialog
 from config import WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT
+
+try:
+    from ui.tabs.installer_tab import InstallerTab
+    INSTALLER_AVAILABLE = True
+except ImportError:
+    INSTALLER_AVAILABLE = False
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -63,7 +70,6 @@ class MainWindow(QMainWindow):
         
     def init_ui(self):
         self.setWindowTitle(" ")
-        from PyQt6.QtGui import QPixmap
         pixmap = QPixmap(16, 16)
         pixmap.fill(Qt.GlobalColor.transparent)
         self.setWindowIcon(QIcon(pixmap))
@@ -76,9 +82,15 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         
         self.header = HeaderWidget()
+        self.header.search_requested.connect(self.open_global_search)
         main_layout.addWidget(self.header)
         
-        content_layout = QHBoxLayout()
+        # Основной контент в стеке (обычный интерфейс + поиск)
+        self.main_stack = QStackedWidget()
+        
+        # Обычный интерфейс
+        normal_widget = QWidget()
+        content_layout = QHBoxLayout(normal_widget)
         content_layout.setContentsMargins(15, 15, 15, 15)
         content_layout.setSpacing(15)
         
@@ -117,13 +129,24 @@ class MainWindow(QMainWindow):
         self.console_panel.activity_detected.connect(self.reset_idle_timer)
         content_layout.addWidget(self.console_panel, 1)
         
-        main_layout.addLayout(content_layout)
+        self.main_stack.addWidget(normal_widget)
+        
+        # Глобальный поиск
+        self.global_search = GlobalSearchWidget(self)
+        self.global_search.search_activated.connect(self.handle_search_result)
+        self.global_search.search_closed.connect(self.close_global_search)
+        self.main_stack.addWidget(self.global_search)
+        
+        main_layout.addWidget(self.main_stack)
         
         self.tab_buttons.idClicked.connect(self.switch_tab)
         
         if self.tab_buttons.buttons():
             self.tab_buttons.buttons()[0].setChecked(True)
             self.stacked_widget.setCurrentIndex(0)
+            
+        # Горячие клавиши
+        self.setup_shortcuts()
         
     def create_tabs(self, layout):
         tabs_data = [
@@ -133,6 +156,9 @@ class MainWindow(QMainWindow):
             ("Папки", FoldersTab()),
             ("Сеть", NetworkTab()),
         ]
+        
+        if INSTALLER_AVAILABLE:
+            tabs_data.append(("Программы", InstallerTab()))
         
         for i, (name, widget) in enumerate(tabs_data):
             button = QPushButton(name)
@@ -337,3 +363,43 @@ class MainWindow(QMainWindow):
                     self.hide_to_tray()
                     return
         super().changeEvent(event)
+    
+    def setup_shortcuts(self):
+        """Настройка горячих клавиш"""
+        # Ctrl+K для глобального поиска
+        self.search_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+        self.search_shortcut.activated.connect(self.open_global_search)
+        
+        # Escape для закрытия поиска
+        self.escape_shortcut = QShortcut(QKeySequence("Escape"), self)
+        self.escape_shortcut.activated.connect(self.close_global_search)
+        
+    def open_global_search(self):
+        """Открыть глобальный поиск"""
+        if self.is_authenticated:
+            self.main_stack.setCurrentWidget(self.global_search)
+            self.global_search.focus_search()
+            self.console_panel.add_log("🔍 Глобальный поиск открыт (Ctrl+K)", "info")
+            
+    def close_global_search(self):
+        """Закрыть глобальный поиск"""
+        if self.main_stack.currentWidget() == self.global_search:
+            self.main_stack.setCurrentIndex(0)  # Вернуться к обычному интерфейсу
+            self.global_search.clear_search()
+            
+    def handle_search_result(self, tab_index, action):
+        """Обработка результата поиска"""
+        # Переключиться на нужную вкладку
+        if 0 <= tab_index < len(self.tab_buttons.buttons()):
+            self.tab_buttons.buttons()[tab_index].setChecked(True)
+            self.stacked_widget.setCurrentIndex(tab_index)
+            
+            # Показать сообщение о переходе
+            tab_names = ["Система", "iiko", "Логи", "Папки", "Сеть", "Программы"]
+            tab_name = tab_names[tab_index] if tab_index < len(tab_names) else "Неизвестно"
+            self.console_panel.add_log(f"📍 Переход на вкладку: {tab_name}", "info")
+            
+            # Если есть специальное действие, выполнить его
+            if action:
+                # Здесь можно добавить выполнение конкретных действий
+                pass

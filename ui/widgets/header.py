@@ -1,8 +1,10 @@
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel
-from PyQt6.QtCore import QDateTime, QTimer
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
+from PyQt6.QtCore import QDateTime, QTimer, pyqtSignal
 from ui.styles import HEADER_STYLE, LOGO_STYLE
 
 class HeaderWidget(QFrame):
+    search_requested = pyqtSignal()
+    
     def __init__(self):
         super().__init__()
         self.init_ui()
@@ -26,6 +28,30 @@ class HeaderWidget(QFrame):
             }
         """)
         
+        # Кнопка глобального поиска
+        self.search_button = QPushButton("🔍 Поиск")
+        self.search_button.setFixedSize(100, 35)
+        self.search_button.clicked.connect(self.search_requested.emit)
+        self.search_button.setStyleSheet("""
+            QPushButton {
+                background-color: #1e40af;
+                border: 1px solid #3b82f6;
+                border-radius: 6px;
+                color: #3b82f6;
+                font-size: 12px;
+                font-weight: 500;
+                padding: 6px 12px;
+            }
+            QPushButton:hover {
+                background-color: #1d4ed8;
+                border-color: #60a5fa;
+                color: #60a5fa;
+            }
+            QPushButton:pressed {
+                background-color: #1e3a8a;
+            }
+        """)
+        
         self.time_label = QLabel()
         self.time_label.setStyleSheet("""
             QLabel {
@@ -42,6 +68,7 @@ class HeaderWidget(QFrame):
         layout.addWidget(logo_label)
         layout.addWidget(version_label)
         layout.addStretch()
+        layout.addWidget(self.search_button)
         layout.addWidget(self.time_label)
         
     def update_time(self):
