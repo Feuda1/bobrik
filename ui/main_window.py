@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                              QScrollArea, QStackedWidget, QPushButton, QButtonGroup,
                              QSystemTrayIcon, QMenu, QMessageBox, QApplication)
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QIcon, QPixmap, QAction, QKeySequence, QShortcut
+from PyQt6.QtGui import QIcon, QPixmap, QAction, QKeySequence, QShortcut, QColor, QPainter, QBrush, QPen
 from ui.styles import MAIN_WINDOW_STYLE
 from ui.widgets.header import HeaderWidget
 from ui.widgets.console_panel import ConsolePanel
@@ -49,6 +49,7 @@ class MainWindow(QMainWindow):
         # Менеджер обновлений
         self.update_manager = SimpleUpdateManager(self)
         self.update_manager.log_signal.connect(self.add_log)
+        # Настройка репозитория (замените на ваш GitHub username)
         self.update_manager.set_github_repo("Feuda1/bobrik")
         
     def init_tray_icon(self):
@@ -57,9 +58,8 @@ class MainWindow(QMainWindow):
                                "Системный трей недоступен в этой системе.")
             return
         
-        pixmap = QPixmap(16, 16)
-        pixmap.fill(Qt.GlobalColor.black)
-        icon = QIcon(pixmap)
+        # Пытаемся загрузить пользовательскую иконку
+        icon = self.load_tray_icon()
         
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setIcon(icon)
@@ -82,9 +82,11 @@ class MainWindow(QMainWindow):
         
     def init_ui(self):
         self.setWindowTitle(" ")
-        pixmap = QPixmap(16, 16)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        self.setWindowIcon(QIcon(pixmap))
+        
+        # Загружаем пользовательскую иконку для окна
+        window_icon = self.load_window_icon()
+        self.setWindowIcon(window_icon)
+        
         self.setGeometry(100, 100, WINDOW_WIDTH, WINDOW_HEIGHT)
         self.setStyleSheet(MAIN_WINDOW_STYLE)
         
@@ -405,6 +407,53 @@ class MainWindow(QMainWindow):
         """Проверяет обновления"""
         self.update_manager.check_for_updates()
         self.reset_idle_timer()
+    
+    # === МЕТОДЫ ДЛЯ РАБОТЫ С ИКОНКАМИ ===
+    
+    def load_tray_icon(self):
+        """Создает иконку для трея с буквой b"""
+        return self.create_default_icon()
+
+    def create_default_icon(self):
+        """Создает красивую иконку с буквой b"""
+        try:
+            # Создаем иконку 32x32
+            pixmap = QPixmap(32, 32)
+            pixmap.fill(Qt.GlobalColor.transparent)
+            
+            painter = QPainter(pixmap)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            
+            # Рисуем темный круг с градиентом
+            painter.setBrush(QBrush(QColor(26, 26, 26)))
+            painter.setPen(QPen(QColor(64, 64, 64), 2))
+            painter.drawEllipse(2, 2, 28, 28)
+            
+            # Рисуем букву "b"
+            painter.setPen(QPen(QColor(224, 224, 224)))
+            font = painter.font()
+            font.setPointSize(18)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "b")
+            
+            painter.end()
+            
+            print("🎨 Создана иконка с буквой 'b'")
+            
+            return QIcon(pixmap)
+            
+        except Exception as e:
+            print(f"❌ Ошибка создания иконки: {str(e)}")
+            
+            # В крайнем случае возвращаем черный квадрат
+            pixmap = QPixmap(16, 16)
+            pixmap.fill(QColor(26, 26, 26))
+            return QIcon(pixmap)
+
+    def load_window_icon(self):
+        """Создает иконку для окна с буквой b"""
+        return self.create_default_icon()
     
     # === ОБРАБОТЧИКИ ПОИСКА ===
     
