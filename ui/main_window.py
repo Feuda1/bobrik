@@ -6,7 +6,7 @@ from PyQt6.QtGui import QIcon, QPixmap, QAction, QKeySequence, QShortcut
 from ui.styles import MAIN_WINDOW_STYLE
 from ui.widgets.header import HeaderWidget
 from ui.widgets.console_panel import ConsolePanel
-from ui.widgets.global_search import GlobalSearchWidget
+from ui.widgets.dropdown_search import DropdownSearchWidget
 from ui.tabs.system_tab import SystemTab
 from ui.tabs.iiko_tab import IikoTab
 from ui.tabs.logs_tab import LogsTab
@@ -81,16 +81,16 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         
+        # Заголовок с интегрированной строкой поиска
         self.header = HeaderWidget()
-        self.header.search_requested.connect(self.open_global_search)
+        self.header.search_text_changed.connect(self.on_search_text_changed)
+        self.header.search_focus_gained.connect(self.on_search_focus_gained)
+        self.header.search_focus_lost.connect(self.on_search_focus_lost)
+        self.header.search_position_requested.connect(self.position_dropdown_search)
         main_layout.addWidget(self.header)
         
-        # Основной контент в стеке (обычный интерфейс + поиск)
-        self.main_stack = QStackedWidget()
-        
-        # Обычный интерфейс
-        normal_widget = QWidget()
-        content_layout = QHBoxLayout(normal_widget)
+        # Основной контент
+        content_layout = QHBoxLayout()
         content_layout.setContentsMargins(15, 15, 15, 15)
         content_layout.setSpacing(15)
         
@@ -129,15 +129,12 @@ class MainWindow(QMainWindow):
         self.console_panel.activity_detected.connect(self.reset_idle_timer)
         content_layout.addWidget(self.console_panel, 1)
         
-        self.main_stack.addWidget(normal_widget)
+        main_layout.addLayout(content_layout)
         
-        # Глобальный поиск
-        self.global_search = GlobalSearchWidget(self)
-        self.global_search.search_activated.connect(self.handle_search_result)
-        self.global_search.search_closed.connect(self.close_global_search)
-        self.main_stack.addWidget(self.global_search)
-        
-        main_layout.addWidget(self.main_stack)
+        # Выпадающий поиск (скрытый изначально)
+        self.dropdown_search = DropdownSearchWidget(self)
+        self.dropdown_search.search_activated.connect(self.handle_search_result)
+        self.dropdown_search.search_closed.connect(self.on_search_closed)
         
         self.tab_buttons.idClicked.connect(self.switch_tab)
         
@@ -147,6 +144,12 @@ class MainWindow(QMainWindow):
             
         # Горячие клавиши
         self.setup_shortcuts()
+        
+        # Таймер для задержки поиска
+        self.search_timer = QTimer()
+        self.search_timer.setSingleShot(True)
+        self.search_timer.timeout.connect(self.perform_delayed_search)
+        self.pending_search_text = ""
         
     def create_tabs(self, layout):
         tabs_data = [
@@ -275,10 +278,25 @@ class MainWindow(QMainWindow):
             self.hide_to_tray()
             
     def mousePressEvent(self, event):
+        # Закрываем поиск при клике вне его
+        if self.dropdown_search.is_visible:
+            search_rect = self.dropdown_search.geometry()
+            if not search_rect.contains(event.pos()):
+                self.dropdown_search.hide_dropdown()
+                
         self.reset_idle_timer()
         super().mousePressEvent(event)
         
     def keyPressEvent(self, event):
+        # Обработка Escape для закрытия поиска
+        if event.key() == Qt.Key.Key_Escape and self.dropdown_search.is_visible:
+            self.dropdown_search.hide_dropdown()
+            self.header.clear_search()
+            
+        # Обработка Enter для выполнения первого результата
+        elif event.key() == Qt.Key.Key_Return and self.dropdown_search.is_visible:
+            self.dropdown_search.execute_first_result()
+            
         self.reset_idle_timer()
         super().keyPressEvent(event)
         
@@ -323,6 +341,7 @@ class MainWindow(QMainWindow):
     
     def hide_to_tray(self):
         self.idle_timer.stop()
+        self.dropdown_search.hide_dropdown()
         self.hide()
     
     def quit_application(self):
@@ -366,29 +385,76 @@ class MainWindow(QMainWindow):
     
     def setup_shortcuts(self):
         """Настройка горячих клавиш"""
-        # Ctrl+K для глобального поиска
+        # Ctrl+K для фокуса на поиске
         self.search_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
-        self.search_shortcut.activated.connect(self.open_global_search)
+        self.search_shortcut.activated.connect(self.focus_header_search)
         
-        # Escape для закрытия поиска
-        self.escape_shortcut = QShortcut(QKeySequence("Escape"), self)
-        self.escape_shortcut.activated.connect(self.close_global_search)
-        
-    def open_global_search(self):
-        """Открыть глобальный поиск"""
+    def focus_header_search(self):
+        """Установить фокус на поиск в заголовке"""
         if self.is_authenticated:
-            self.main_stack.setCurrentWidget(self.global_search)
-            self.global_search.focus_search()
-            self.console_panel.add_log("🔍 Глобальный поиск открыт (Ctrl+K)", "info")
-            
-    def close_global_search(self):
-        """Закрыть глобальный поиск"""
-        if self.main_stack.currentWidget() == self.global_search:
-            self.main_stack.setCurrentIndex(0)  # Вернуться к обычному интерфейсу
-            self.global_search.clear_search()
-            
+            self.header.focus_search()
+            self.console_panel.add_log("🔍 Поиск активирован (Ctrl+K)", "info")
+    
+    # === ОБРАБОТЧИКИ ПОИСКА ===
+    
+    def on_search_text_changed(self, text):
+        """Обработка изменения текста в строке поиска"""
+        if not text.strip():
+            # Если текст пустой, скрываем поиск
+            self.dropdown_search.hide_dropdown()
+            return
+        
+        # Используем таймер для задержки поиска (300мс)
+        self.pending_search_text = text
+        self.search_timer.stop()
+        self.search_timer.start(300)
+    
+    def perform_delayed_search(self):
+        """Выполнить поиск с задержкой"""
+        if self.pending_search_text and self.dropdown_search.is_visible:
+            self.dropdown_search.perform_search(self.pending_search_text)
+    
+    def on_search_focus_gained(self):
+        """Обработка получения фокуса строкой поиска"""
+        text = self.header.get_search_text()
+        if text.strip():
+            # Если есть текст, показываем поиск
+            self.header.emit_search_position()
+    
+    def on_search_focus_lost(self):
+        """Обработка потери фокуса строкой поиска"""
+        # Небольшая задержка перед скрытием, чтобы успеть кликнуть на результат
+        QTimer.singleShot(150, self.check_hide_search)
+    
+    def check_hide_search(self):
+        """Проверить, нужно ли скрыть поиск"""
+        # Скрываем поиск только если фокус не на элементах поиска
+        focused_widget = QApplication.focusWidget()
+        if (focused_widget != self.header.search_input and 
+            focused_widget != self.dropdown_search.results_list):
+            self.dropdown_search.hide_dropdown()
+    
+    def position_dropdown_search(self, x, y):
+        """Позиционировать выпадающий поиск"""
+        if self.is_authenticated and self.header.get_search_text().strip():
+            self.dropdown_search.show_dropdown(x, y)
+    
+    def on_search_closed(self):
+        """Обработка закрытия поиска"""
+        # Поиск закрыт, ничего дополнительного не требуется
+        pass
+        
     def handle_search_result(self, tab_index, action):
         """Обработка результата поиска"""
+        # Получаем информацию о выбранном элементе
+        search_item = None
+        for item in self.dropdown_search.search_items:
+            if item.tab_index == tab_index:
+                # Находим точный элемент по последнему выбору
+                if hasattr(self.dropdown_search, '_last_selected_item'):
+                    search_item = self.dropdown_search._last_selected_item
+                    break
+        
         # Переключиться на нужную вкладку
         if 0 <= tab_index < len(self.tab_buttons.buttons()):
             self.tab_buttons.buttons()[tab_index].setChecked(True)
@@ -397,9 +463,88 @@ class MainWindow(QMainWindow):
             # Показать сообщение о переходе
             tab_names = ["Система", "iiko", "Логи", "Папки", "Сеть", "Программы"]
             tab_name = tab_names[tab_index] if tab_index < len(tab_names) else "Неизвестно"
-            self.console_panel.add_log(f"📍 Переход на вкладку: {tab_name}", "info")
+            self.console_panel.add_log(f"📍 Переход: {tab_name}", "info")
+            
+            # Подсветить соответствующую кнопку
+            if search_item and hasattr(search_item, 'button_text') and search_item.button_text:
+                self.highlight_button_in_tab(tab_index, search_item.button_text)
+            
+            # Очищаем поиск после перехода
+            self.header.clear_search()
             
             # Если есть специальное действие, выполнить его
             if action:
                 # Здесь можно добавить выполнение конкретных действий
                 pass
+                
+    def highlight_button_in_tab(self, tab_index, button_text):
+        """Подсветить кнопку на указанной вкладке"""
+        try:
+            # Получаем виджет вкладки
+            tab_widget = self.stacked_widget.widget(tab_index)
+            if not tab_widget:
+                return
+                
+            # Ищем кнопку по тексту
+            from PyQt6.QtWidgets import QPushButton
+            buttons = tab_widget.findChildren(QPushButton)
+            
+            for button in buttons:
+                if button.text() == button_text:
+                    self.apply_highlight_style(button)
+                    # Убираем подсветку через 3 секунды
+                    QTimer.singleShot(3000, lambda: self.remove_highlight_style(button))
+                    self.console_panel.add_log(f"🔍 Найдено: {button_text}", "info")
+                    break
+                    
+        except Exception as e:
+            print(f"Ошибка подсветки кнопки: {e}")
+            
+    def apply_highlight_style(self, button):
+        """Применить стиль подсветки к кнопке"""
+        button.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #7c3aed,
+                    stop: 1 #5b21b6);
+                border: 2px solid #a855f7;
+                border-radius: 4px;
+                color: #ffffff;
+                font-size: 11px;
+                font-weight: 600;
+                padding: 4px 2px;
+                animation: pulse 1s ease-in-out infinite;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                    stop: 0 #8b5cf6,
+                    stop: 1 #6d28d9);
+                border-color: #c084fc;
+            }
+            QPushButton:pressed {
+                background: #6d28d9;
+                border-color: #a855f7;
+            }
+        """)
+        
+    def remove_highlight_style(self, button):
+        """Убрать стиль подсветки с кнопки"""
+        # Возвращаем обычный стиль кнопки
+        button.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                color: #e0e0e0;
+                font-size: 11px;
+                font-weight: 500;
+                padding: 4px 2px;
+            }
+            QPushButton:hover {
+                background-color: #3a3a3a;
+                border-color: #4a4a4a;
+            }
+            QPushButton:pressed {
+                background-color: #1a1a1a;
+            }
+        """)
