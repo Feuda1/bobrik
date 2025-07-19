@@ -5,6 +5,7 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QPalette, QColor
 from PyQt6.QtCore import Qt
 from ui.main_window import MainWindow
+from simple_startup import setup_startup_if_first_run
 
 def is_admin():
     try:
@@ -48,6 +49,9 @@ def main():
             print("Программа будет запущена с ограниченной функциональностью.")
     else:
         print("Программа запущена с правами администратора.")
+    
+    # Настраиваем автозагрузку при первом запуске
+    setup_startup_if_first_run()
     
     app = QApplication(sys.argv)
     app.setStyle('Fusion')

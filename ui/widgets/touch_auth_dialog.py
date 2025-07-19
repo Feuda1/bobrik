@@ -14,7 +14,7 @@ class TouchAuthDialog(QDialog):
         
     def init_ui(self):
         self.setWindowTitle("bobrik - Авторизация")
-        self.setFixedSize(380, 520)  # Еще компактнее
+        self.setFixedSize(380, 520)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         
         self.center_window()
@@ -90,7 +90,7 @@ class TouchAuthDialog(QDialog):
         
         # Клавиатура
         keypad_frame = QFrame()
-        keypad_frame.setFixedHeight(280)  # Компактная клавиатура
+        keypad_frame.setFixedHeight(280)
         keypad_frame.setStyleSheet("""
             QFrame {
                 background-color: #141414;
@@ -100,7 +100,7 @@ class TouchAuthDialog(QDialog):
         """)
         
         keypad_layout = QGridLayout(keypad_frame)
-        keypad_layout.setSpacing(10)  # Меньшие отступы
+        keypad_layout.setSpacing(10)
         keypad_layout.setContentsMargins(18, 18, 18, 18)
         
         # Создаем квадратные кнопки цифр
@@ -154,7 +154,7 @@ class TouchAuthDialog(QDialog):
     def create_number_button(self, number):
         """Создает квадратную кнопку цифры"""
         button = QPushButton(number)
-        button.setFixedSize(65, 65)  # Компактные кнопки
+        button.setFixedSize(65, 65)
         button.clicked.connect(lambda: self.add_digit(number))
         button.setStyleSheet("""
             QPushButton {
@@ -199,7 +199,7 @@ class TouchAuthDialog(QDialog):
             self.update_indicators()
             
             if len(self.current_pin) == 4:
-                QTimer.singleShot(200, self.check_pin)
+                QTimer.singleShot(100, self.check_pin)  # Было 200, стало 100
                 
     def clear_pin(self):
         """Очищает PIN"""
@@ -237,10 +237,10 @@ class TouchAuthDialog(QDialog):
         """Проверяет PIN"""
         if self.current_pin == self.correct_pin:
             self.show_success()
-            QTimer.singleShot(1000, self.accept_auth)
+            QTimer.singleShot(300, self.accept_auth)  # Было 1000, стало 300
         else:
             self.show_error()
-            QTimer.singleShot(1500, self.clear_pin)
+            QTimer.singleShot(800, self.clear_pin)  # Было 1500, стало 800
             
     def show_success(self):
         """Показывает успешную авторизацию"""
@@ -302,8 +302,14 @@ class TouchAuthDialog(QDialog):
             self.add_digit(digit)
         elif key in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
             self.clear_pin()
-        elif key == Qt.Key.Key_Return and len(self.current_pin) == 4:
-            self.check_pin()
+        elif key == Qt.Key.Key_Return:
+            if len(self.current_pin) == 4:
+                self.check_pin()  # Мгновенная проверка по Enter
+            elif len(self.current_pin) == 0:
+                # Быстрый ввод правильного PIN-кода по Enter
+                self.current_pin = self.correct_pin
+                self.update_indicators()
+                QTimer.singleShot(50, self.check_pin)  # Почти мгновенно
         elif key == Qt.Key.Key_Escape:
             self.reject()
             
