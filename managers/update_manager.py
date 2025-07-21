@@ -20,7 +20,7 @@ class SimpleUpdateManager(QThread):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent = parent
-        self.current_version = "1.1.1"  # Текущая версия приложения
+        self.current_version = "1.1.2"  # Текущая версия приложения
         self.github_repo = "Feuda1/bobrik"
         self.version_url = f"https://raw.githubusercontent.com/{self.github_repo}/main/version.json"
         self.exe_url = f"https://github.com/{self.github_repo}/releases/latest/download/bobrik.exe"
@@ -182,28 +182,28 @@ class SimpleUpdateManager(QThread):
             temp_dir = tempfile.gettempdir()
             script_path = os.path.join(temp_dir, "bobrik_update.bat")
             
-            # Создаем batch скрипт для Windows
+            # Создаем batch скрипт для Windows (без эмодзи)
             script_content = f'''@echo off
-echo 🔄 Обновление bobrik...
+echo Obnovlenie bobrik...
 timeout /t 2 /nobreak > nul
 
-echo 📝 Создание резервной копии...
+echo Sozdanie rezervnoy kopii...
 if exist "{current_exe}.backup" del "{current_exe}.backup"
 ren "{current_exe}" "{os.path.basename(current_exe)}.backup"
 
-echo 📦 Установка новой версии...
+echo Ustanovka novoy versii...
 copy "{new_exe_path}" "{current_exe}"
 
-echo 🚀 Запуск обновленной версии...
+echo Zapusk obnovlennoy versii...
 start "" "{current_exe}"
 
-echo 🧹 Очистка временных файлов...
+echo Ochistka vremennyh faylov...
 timeout /t 2 /nobreak > nul
 del "{new_exe_path}"
 del "%~f0"
 '''
             
-            with open(script_path, 'w', encoding='cp1251') as f:
+            with open(script_path, 'w', encoding='ascii', errors='ignore') as f:
                 f.write(script_content)
                 
             # Используем QTimer для показа финального диалога в главном потоке
