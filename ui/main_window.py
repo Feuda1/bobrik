@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QScrollArea, QStackedWidget, QPushButton, QButtonGroup,
-                             QSystemTrayIcon, QMenu, QMessageBox, QApplication)
-from PyQt6.QtCore import Qt, QTimer
+                             QSystemTrayIcon, QMenu, QMessageBox, QApplication, QSplitter)
+from PyQt6.QtCore import Qt, QTimer, QSize
 from PyQt6.QtGui import QIcon, QPixmap, QAction, QKeySequence, QShortcut, QColor, QPainter, QBrush, QPen
 from ui.styles import MAIN_WINDOW_STYLE
 from ui.widgets.header import HeaderWidget
@@ -14,7 +14,7 @@ from ui.tabs.folders_tab import FoldersTab
 from ui.tabs.network_tab import NetworkTab
 from ui.widgets.touch_auth_dialog import TouchAuthDialog
 from managers.update_manager import SimpleUpdateManager
-from config import WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT
+from config import WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, LAYOUT_PARAMS, get_is_small_screen
 
 try:
     from ui.tabs.installer_tab import InstallerTab
@@ -33,6 +33,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.tray_icon = None
         self.is_authenticated = False
+        self.is_small_screen = get_is_small_screen()
         
         self.idle_timer = QTimer()
         self.idle_timer.setSingleShot(True)
@@ -45,11 +46,12 @@ class MainWindow(QMainWindow):
         self.hide()
         
         self.console_panel.add_log("bobrik запущен в трее", "info")
+        if self.is_small_screen:
+            self.console_panel.add_log("Обнаружен маленький экран - включен компактный режим", "info")
         
         # Менеджер обновлений
         self.update_manager = SimpleUpdateManager(self)
         self.update_manager.log_signal.connect(self.add_log)
-        # Настройка репозитория (замените на ваш GitHub username)
         self.update_manager.set_github_repo("Feuda1/bobrik")
         
     def init_tray_icon(self):
@@ -58,7 +60,6 @@ class MainWindow(QMainWindow):
                                "Системный трей недоступен в этой системе.")
             return
         
-        # Пытаемся загрузить пользовательскую иконку
         icon = self.load_tray_icon()
         
         self.tray_icon = QSystemTrayIcon(self)
@@ -83,11 +84,14 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         self.setWindowTitle(" ")
         
-        # Загружаем пользовательскую иконку для окна
         window_icon = self.load_window_icon()
         self.setWindowIcon(window_icon)
         
+        # Адаптивные размеры окна
         self.setGeometry(100, 100, WINDOW_WIDTH, WINDOW_HEIGHT)
+        self.setMinimumSize(800 if self.is_small_screen else 1000, 
+                          500 if self.is_small_screen else 600)
+        
         self.setStyleSheet(MAIN_WINDOW_STYLE)
         
         central_widget = QWidget()
@@ -95,7 +99,7 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Заголовок с интегрированной строкой поиска
+        # Заголовок с адаптивной высотой
         self.header = HeaderWidget()
         self.header.search_text_changed.connect(self.on_search_text_changed)
         self.header.search_focus_gained.connect(self.on_search_focus_gained)
@@ -105,17 +109,76 @@ class MainWindow(QMainWindow):
         self.header.check_updates_requested.connect(self.check_updates)
         main_layout.addWidget(self.header)
         
-        # Основной контент
+        # Основной контент с адаптивными отступами
         content_layout = QHBoxLayout()
-        content_layout.setContentsMargins(15, 15, 15, 15)
-        content_layout.setSpacing(15)
+        margins = LAYOUT_PARAMS['content_margins']
+        spacing = LAYOUT_PARAMS['content_spacing']
+        content_layout.setContentsMargins(margins, margins, margins, margins)
+        content_layout.setSpacing(spacing)
         
+        # Для маленьких экранов используем сплиттер для изменения размеров
+        if self.is_small_screen:
+            self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+            
+            # Левая часть - вкладки и контент
+            left_widget = QWidget()
+            left_layout = QHBoxLayout(left_widget)
+            left_layout.setContentsMargins(0, 0, 0, 0)
+            left_layout.setSpacing(spacing)
+            
+            self.create_tabs_content(left_layout)
+            
+            # Правая часть - консоль
+            self.console_panel = ConsolePanel()
+            self.console_panel.activity_detected.connect(self.reset_idle_timer)
+            
+            self.main_splitter.addWidget(left_widget)
+            self.main_splitter.addWidget(self.console_panel)
+            
+            # Устанавливаем пропорции: 60% контент, 40% консоль
+            self.main_splitter.setSizes([600, 400])
+            self.main_splitter.setCollapsible(0, False)  # Контент нельзя полностью скрыть
+            self.main_splitter.setCollapsible(1, True)   # Консоль можно скрыть
+            
+            content_layout.addWidget(self.main_splitter)
+        else:
+            # Для больших экранов используем обычный layout
+            self.create_tabs_content(content_layout)
+            
+            self.console_panel = ConsolePanel()
+            self.console_panel.activity_detected.connect(self.reset_idle_timer)
+            content_layout.addWidget(self.console_panel, 1)
+        
+        main_layout.addLayout(content_layout)
+        
+        # Выпадающий поиск
+        self.dropdown_search = DropdownSearchWidget(self)
+        self.dropdown_search.search_activated.connect(self.handle_search_result)
+        self.dropdown_search.search_closed.connect(self.on_search_closed)
+        
+        self.tab_buttons.idClicked.connect(self.switch_tab)
+        
+        if self.tab_buttons.buttons():
+            self.tab_buttons.buttons()[0].setChecked(True)
+            self.stacked_widget.setCurrentIndex(0)
+            
+        self.setup_shortcuts()
+        
+        # Таймер для задержки поиска
+        self.search_timer = QTimer()
+        self.search_timer.setSingleShot(True)
+        self.search_timer.timeout.connect(self.perform_delayed_search)
+        self.pending_search_text = ""
+        
+    def create_tabs_content(self, parent_layout):
+        """Создает область вкладок и контента"""
         tabs_layout = QHBoxLayout()
-        tabs_layout.setSpacing(10)
+        tabs_layout.setSpacing(LAYOUT_PARAMS['content_spacing'])
         
+        # Область вкладок с адаптивной шириной
         tabs_scroll = QScrollArea()
         tabs_scroll.setWidgetResizable(True)
-        tabs_scroll.setFixedWidth(120)
+        tabs_scroll.setFixedWidth(LAYOUT_PARAMS['tabs_width'])
         tabs_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         tabs_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         tabs_scroll.setStyleSheet(self.get_scroll_style())
@@ -139,33 +202,7 @@ class MainWindow(QMainWindow):
         tabs_layout.addWidget(tabs_scroll)
         tabs_layout.addWidget(self.stacked_widget, 1)
         
-        content_layout.addLayout(tabs_layout, 2)
-        
-        self.console_panel = ConsolePanel()
-        self.console_panel.activity_detected.connect(self.reset_idle_timer)
-        content_layout.addWidget(self.console_panel, 1)
-        
-        main_layout.addLayout(content_layout)
-        
-        # Выпадающий поиск (скрытый изначально)
-        self.dropdown_search = DropdownSearchWidget(self)
-        self.dropdown_search.search_activated.connect(self.handle_search_result)
-        self.dropdown_search.search_closed.connect(self.on_search_closed)
-        
-        self.tab_buttons.idClicked.connect(self.switch_tab)
-        
-        if self.tab_buttons.buttons():
-            self.tab_buttons.buttons()[0].setChecked(True)
-            self.stacked_widget.setCurrentIndex(0)
-            
-        # Горячие клавиши
-        self.setup_shortcuts()
-        
-        # Таймер для задержки поиска
-        self.search_timer = QTimer()
-        self.search_timer.setSingleShot(True)
-        self.search_timer.timeout.connect(self.perform_delayed_search)
-        self.pending_search_text = ""
+        parent_layout.addLayout(tabs_layout, 2)
         
     def create_tabs(self, layout):
         tabs_data = [
@@ -182,10 +219,13 @@ class MainWindow(QMainWindow):
         if PLUGINS_AVAILABLE:
             tabs_data.append(("Плагины", PluginsTab()))
         
+        # Адаптивная высота кнопок вкладок
+        button_height = 25 if self.is_small_screen else 30
+        
         for i, (name, widget) in enumerate(tabs_data):
             button = QPushButton(name)
             button.setCheckable(True)
-            button.setFixedHeight(30)
+            button.setFixedHeight(button_height)
             button.setStyleSheet(self.get_tab_button_style())
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             
@@ -256,31 +296,46 @@ class MainWindow(QMainWindow):
         """
         
     def get_tab_button_style(self):
-        return """
-            QPushButton {
+        font_size = 11 if self.is_small_screen else 12
+        return f"""
+            QPushButton {{
                 background-color: #1a1a1a;
                 color: #808080;
                 border: 1px solid #2a2a2a;
                 border-radius: 4px;
                 padding: 6px 10px;
                 text-align: left;
-                font-size: 12px;
+                font-size: {font_size}px;
                 font-weight: 500;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #222222;
                 color: #e0e0e0;
                 border-color: #3a3a3a;
-            }
-            QPushButton:checked {
+            }}
+            QPushButton:checked {{
                 background-color: #2a2a2a;
                 color: #ffffff;
                 border-color: #4a4a4a;
-            }
-            QPushButton:pressed {
+            }}
+            QPushButton:pressed {{
                 background-color: #1a1a1a;
-            }
+            }}
         """
+        
+    def resizeEvent(self, event):
+        """Обработка изменения размера окна"""
+        super().resizeEvent(event)
+        
+        # Для маленьких экранов автоматически скрываем консоль при очень малой ширине
+        if self.is_small_screen and hasattr(self, 'main_splitter'):
+            window_width = event.size().width()
+            if window_width < 900:
+                # Скрываем консоль
+                self.main_splitter.setSizes([window_width, 0])
+            elif window_width > 1000:
+                # Показываем консоль
+                self.main_splitter.setSizes([int(window_width * 0.6), int(window_width * 0.4)])
         
     def add_log(self, message, log_type="info"):
         self.console_panel.add_log(message, log_type)
@@ -297,7 +352,6 @@ class MainWindow(QMainWindow):
             self.hide_to_tray()
             
     def mousePressEvent(self, event):
-        # Закрываем поиск при клике вне его
         if self.dropdown_search.is_visible:
             search_rect = self.dropdown_search.geometry()
             if not search_rect.contains(event.pos()):
@@ -307,12 +361,10 @@ class MainWindow(QMainWindow):
         super().mousePressEvent(event)
         
     def keyPressEvent(self, event):
-        # Обработка Escape для закрытия поиска
         if event.key() == Qt.Key.Key_Escape and self.dropdown_search.is_visible:
             self.dropdown_search.hide_dropdown()
             self.header.clear_search()
             
-        # Обработка Enter для выполнения первого результата
         elif event.key() == Qt.Key.Key_Return and self.dropdown_search.is_visible:
             self.dropdown_search.execute_first_result()
             
@@ -364,7 +416,6 @@ class MainWindow(QMainWindow):
         self.hide()
     
     def quit_application(self):
-        """Выход из программы без подтверждения"""
         for i in range(self.stacked_widget.count()):
             widget = self.stacked_widget.widget(i)
             if hasattr(widget, 'cleanup'):
@@ -392,44 +443,35 @@ class MainWindow(QMainWindow):
         super().changeEvent(event)
     
     def setup_shortcuts(self):
-        """Настройка горячих клавиш"""
-        # Ctrl+K для фокуса на поиске
         self.search_shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
         self.search_shortcut.activated.connect(self.focus_header_search)
         
     def focus_header_search(self):
-        """Установить фокус на поиск в заголовке"""
         if self.is_authenticated:
             self.header.focus_search()
             self.console_panel.add_log("🔍 Поиск активирован (Ctrl+K)", "info")
     
     def check_updates(self):
-        """Проверяет обновления"""
         self.update_manager.check_for_updates()
         self.reset_idle_timer()
     
     # === МЕТОДЫ ДЛЯ РАБОТЫ С ИКОНКАМИ ===
     
     def load_tray_icon(self):
-        """Создает иконку для трея с буквой b"""
         return self.create_default_icon()
 
     def create_default_icon(self):
-        """Создает красивую иконку с буквой b"""
         try:
-            # Создаем иконку 32x32
             pixmap = QPixmap(32, 32)
             pixmap.fill(Qt.GlobalColor.transparent)
             
             painter = QPainter(pixmap)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)
             
-            # Рисуем темный круг с градиентом
             painter.setBrush(QBrush(QColor(26, 26, 26)))
             painter.setPen(QPen(QColor(64, 64, 64), 2))
             painter.drawEllipse(2, 2, 28, 28)
             
-            # Рисуем букву "b"
             painter.setPen(QPen(QColor(224, 224, 224)))
             font = painter.font()
             font.setPointSize(18)
@@ -439,116 +481,85 @@ class MainWindow(QMainWindow):
             
             painter.end()
             
-            print("🎨 Создана иконка с буквой 'b'")
-            
             return QIcon(pixmap)
             
         except Exception as e:
-            print(f"❌ Ошибка создания иконки: {str(e)}")
-            
-            # В крайнем случае возвращаем черный квадрат
             pixmap = QPixmap(16, 16)
             pixmap.fill(QColor(26, 26, 26))
             return QIcon(pixmap)
 
     def load_window_icon(self):
-        """Создает иконку для окна с буквой b"""
         return self.create_default_icon()
     
     # === ОБРАБОТЧИКИ ПОИСКА ===
     
     def on_search_text_changed(self, text):
-        """Обработка изменения текста в строке поиска"""
         if not text.strip():
-            # Если текст пустой, скрываем поиск
             self.dropdown_search.hide_dropdown()
             return
         
-        # Используем таймер для задержки поиска (300мс)
         self.pending_search_text = text
         self.search_timer.stop()
         self.search_timer.start(300)
     
     def perform_delayed_search(self):
-        """Выполнить поиск с задержкой"""
         if self.pending_search_text and self.dropdown_search.is_visible:
             self.dropdown_search.perform_search(self.pending_search_text)
     
     def on_search_focus_gained(self):
-        """Обработка получения фокуса строкой поиска"""
         text = self.header.get_search_text()
         if text.strip():
-            # Если есть текст, показываем поиск
             self.header.emit_search_position()
     
     def on_search_focus_lost(self):
-        """Обработка потери фокуса строкой поиска"""
-        # Небольшая задержка перед скрытием, чтобы успеть кликнуть на результат
         QTimer.singleShot(150, self.check_hide_search)
     
     def check_hide_search(self):
-        """Проверить, нужно ли скрыть поиск"""
-        # Скрываем поиск только если фокус не на элементах поиска
         focused_widget = QApplication.focusWidget()
         if (focused_widget != self.header.search_input and 
             focused_widget != self.dropdown_search.results_list):
             self.dropdown_search.hide_dropdown()
     
     def position_dropdown_search(self, x, y):
-        """Позиционировать выпадающий поиск"""
         if self.is_authenticated and self.header.get_search_text().strip():
             self.dropdown_search.show_dropdown(x, y)
     
     def on_search_closed(self):
-        """Обработка закрытия поиска"""
-        # Поиск закрыт, ничего дополнительного не требуется
         pass
         
     def handle_search_result(self, tab_index, action):
-        """Обработка результата поиска"""
-        # Получаем информацию о выбранном элементе
         search_item = None
         if hasattr(self.dropdown_search, '_last_selected_item'):
             search_item = self.dropdown_search._last_selected_item
         
-        # Переключиться на нужную вкладку
         if 0 <= tab_index < len(self.tab_buttons.buttons()):
             self.tab_buttons.buttons()[tab_index].setChecked(True)
             self.stacked_widget.setCurrentIndex(tab_index)
             
-            # Показать сообщение о переходе
             tab_names = ["Система", "iiko", "Логи", "Папки", "Сеть", "Программы", "Плагины"]
             tab_name = tab_names[tab_index] if tab_index < len(tab_names) else "Неизвестно"
             self.console_panel.add_log(f"📍 Переход: {tab_name}", "info")
             
-            # Подсветить соответствующую кнопку
             if search_item and hasattr(search_item, 'button_text') and search_item.button_text:
                 self.highlight_button_in_tab(tab_index, search_item.button_text)
             
-            # Очищаем поиск после перехода
             self.header.clear_search()
             
-            # Если есть специальное действие, выполнить его
             if action:
-                # Здесь можно добавить выполнение конкретных действий
                 pass
                 
     def highlight_button_in_tab(self, tab_index, button_text):
-        """Подсветить кнопку на указанной вкладке"""
         try:
-            # Получаем виджет вкладки
             tab_widget = self.stacked_widget.widget(tab_index)
             if not tab_widget:
                 return
                 
-            # Ищем кнопку по тексту
             from PyQt6.QtWidgets import QPushButton
             buttons = tab_widget.findChildren(QPushButton)
             
             for button in buttons:
                 if button.text() == button_text:
                     self.apply_highlight_style(button)
-                    # Убираем подсветку через 3 секунды
                     QTimer.singleShot(3000, lambda: self.remove_highlight_style(button))
                     self.console_panel.add_log(f"🔍 Найдено: {button_text}", "info")
                     break
@@ -557,7 +568,6 @@ class MainWindow(QMainWindow):
             print(f"Ошибка подсветки кнопки: {e}")
             
     def apply_highlight_style(self, button):
-        """Применить стиль подсветки к кнопке"""
         button.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
@@ -583,8 +593,6 @@ class MainWindow(QMainWindow):
         """)
         
     def remove_highlight_style(self, button):
-        """Убрать стиль подсветки с кнопки"""
-        # Возвращаем обычный стиль кнопки
         button.setStyleSheet("""
             QPushButton {
                 background-color: #2a2a2a;

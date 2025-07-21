@@ -123,6 +123,22 @@ class InstallerTab(QWidget):
                 "name": "OrderCheck",
                 "url": "https://clearbat.iiko.online/downloads/OrderCheck.exe",
                 "filename": "OrderCheck.exe"
+            },
+            "clear_bat": {
+                "name": "CLEAR.bat",
+                "url": "https://clearbat.iiko.online/downloads/CLEAR.bat.exe",
+                "filename": "CLEAR.bat.exe"
+            },
+            "iikotools": {
+                "name": "iikoTools",
+                "url": "https://fronttools.iiko.it/FrontTools.exe",
+                "filename": "FrontTools.exe"
+            },
+            "iikotools_sqlite": {
+                "name": "iikoTools SQLite",
+                "url": "https://fronttools.iiko.it/fronttools_sqlite.zip",
+                "filename": "fronttools_sqlite.zip",
+                "is_zip": True
             }
         }
         
@@ -257,26 +273,72 @@ class InstallerTab(QWidget):
         button.setFixedSize(140, 50)
         button.setCursor(Qt.CursorShape.PointingHandCursor)
         button.clicked.connect(lambda: self.install_program(program_key))
-        button.setStyleSheet("""
-            QPushButton {
-                background-color: #2a2a2a;
-                border: 1px solid #3a3a3a;
-                border-radius: 6px;
-                color: #e0e0e0;
-                font-size: 12px;
-                font-weight: 500;
-                padding: 6px;
-                text-align: center;
-            }
-            QPushButton:hover {
-                background-color: #3a3a3a;
-                border-color: #4a4a4a;
-                color: #ffffff;
-            }
-            QPushButton:pressed {
-                background-color: #1a1a1a;
-            }
-        """)
+        
+        # Специальный стиль для CLEAR.bat
+        if program_key == "clear_bat":
+            button.setStyleSheet("""
+                QPushButton {
+                    background-color: #7c2d12;
+                    border: 1px solid #ea580c;
+                    border-radius: 6px;
+                    color: #ea580c;
+                    font-size: 12px;
+                    font-weight: 600;
+                    padding: 6px;
+                    text-align: center;
+                }
+                QPushButton:hover {
+                    background-color: #9a3412;
+                    border-color: #fb923c;
+                    color: #fb923c;
+                }
+                QPushButton:pressed {
+                    background-color: #7c2d12;
+                }
+            """)
+        # Специальный стиль для iikoTools
+        elif program_key in ["iikotools", "iikotools_sqlite"]:
+            button.setStyleSheet("""
+                QPushButton {
+                    background-color: #1e40af;
+                    border: 1px solid #3b82f6;
+                    border-radius: 6px;
+                    color: #3b82f6;
+                    font-size: 12px;
+                    font-weight: 600;
+                    padding: 6px;
+                    text-align: center;
+                }
+                QPushButton:hover {
+                    background-color: #1d4ed8;
+                    border-color: #60a5fa;
+                    color: #60a5fa;
+                }
+                QPushButton:pressed {
+                    background-color: #1e3a8a;
+                }
+            """)
+        else:
+            button.setStyleSheet("""
+                QPushButton {
+                    background-color: #2a2a2a;
+                    border: 1px solid #3a3a3a;
+                    border-radius: 6px;
+                    color: #e0e0e0;
+                    font-size: 12px;
+                    font-weight: 500;
+                    padding: 6px;
+                    text-align: center;
+                }
+                QPushButton:hover {
+                    background-color: #3a3a3a;
+                    border-color: #4a4a4a;
+                    color: #ffffff;
+                }
+                QPushButton:pressed {
+                    background-color: #1a1a1a;
+                }
+            """)
         
         return button
         
@@ -338,7 +400,10 @@ class InstallerTab(QWidget):
             "Rhelper": "Rhelper",
             "7-Zip": "7-Zip",
             "Notepad++": "Notepad_Plus",
-            "OrderCheck": "OrderCheck"
+            "OrderCheck": "OrderCheck",
+            "CLEAR.bat": "CLEAR_bat",
+            "iikoTools": "iikoTools",
+            "iikoTools SQLite": "iikoTools_SQLite"
         }
         return safe_names.get(program_name, program_name.replace(" ", "_"))
 
@@ -350,7 +415,7 @@ class InstallerTab(QWidget):
             # Определяем куда извлекать
             if program.get("filename") in ["Advanced_IP_Scanner_2.5.4594.1.exe", "AnyDesk.exe", 
                                          "ComPortChecker.1.1.zip", "DatabaseNet5Pro.zip", 
-                                         "Printer-TEST-V3.1C.zip"]:
+                                         "Printer-TEST-V3.1C.zip", "fronttools_sqlite.zip"]:
                 # На рабочий стол
                 desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
                 extract_dir = os.path.join(desktop_path, safe_name)
@@ -405,7 +470,8 @@ class InstallerTab(QWidget):
     def handle_executable(self, exe_path, program):
         try:
             # Определяем куда сохранять exe файлы
-            if program.get("filename") in ["Advanced_IP_Scanner_2.5.4594.1.exe", "AnyDesk.exe", "OrderCheck.exe"]:
+            if program.get("filename") in ["Advanced_IP_Scanner_2.5.4594.1.exe", "AnyDesk.exe", 
+                                         "OrderCheck.exe", "CLEAR.bat.exe", "FrontTools.exe"]:
                 # На рабочий стол
                 desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
                 final_path = os.path.join(desktop_path, program["filename"])
@@ -427,7 +493,7 @@ class InstallerTab(QWidget):
             subprocess.Popen([final_path])
             self.log_signal.emit(f"{program['name']} - установщик запущен", "success")
             
-            # Специальная обработка для Rhelper - показываем пароль после запуска
+            # Специальные сообщения для некоторых программ
             if program.get("filename") == "remote-access-setup.exe":
                 self.log_signal.emit("🔑 Пароль для Rhelper: remote-access-setup", "warning")
                 

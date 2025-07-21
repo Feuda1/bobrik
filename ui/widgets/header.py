@@ -2,121 +2,143 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton
 from PyQt6.QtCore import QDateTime, QTimer, pyqtSignal, Qt
 from PyQt6.QtGui import QFocusEvent
 from ui.styles import HEADER_STYLE, LOGO_STYLE
+from config import LAYOUT_PARAMS, get_is_small_screen
 
 class HeaderWidget(QFrame):
     search_text_changed = pyqtSignal(str)
     search_focus_gained = pyqtSignal()
     search_focus_lost = pyqtSignal()
-    search_position_requested = pyqtSignal(int, int)  # x, y координаты
-    exit_requested = pyqtSignal()  # Сигнал для выхода
-    check_updates_requested = pyqtSignal()  # Сигнал для проверки обновлений
+    search_position_requested = pyqtSignal(int, int)
+    exit_requested = pyqtSignal()
+    check_updates_requested = pyqtSignal()
     
     def __init__(self):
         super().__init__()
+        self.is_small_screen = get_is_small_screen()
         self.init_ui()
         
     def init_ui(self):
-        self.setFixedHeight(70)
+        # Адаптивная высота заголовка
+        header_height = LAYOUT_PARAMS['header_height']
+        self.setFixedHeight(header_height)
         self.setStyleSheet(HEADER_STYLE)
         
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(20, 0, 20, 0)
+        # Адаптивные отступы
+        margin = 15 if not self.is_small_screen else 10
+        layout.setContentsMargins(margin, 0, margin, 0)
         
-        # Логотип
+        # Логотип с адаптивным размером
         logo_label = QLabel("bobrik")
-        logo_label.setStyleSheet(LOGO_STYLE)
+        logo_style = LOGO_STYLE
+        if self.is_small_screen:
+            logo_style = logo_style.replace("24px", "20px")
+        logo_label.setStyleSheet(logo_style)
         
         # Версия
-        version_label = QLabel("v1.0.0")
-        version_label.setStyleSheet("""
-            QLabel {
+        version_label = QLabel("v1.1.0")
+        version_size = 12 if self.is_small_screen else 14
+        version_label.setStyleSheet(f"""
+            QLabel {{
                 color: #606060;
-                font-size: 14px;
-                margin-left: 10px;
-            }
+                font-size: {version_size}px;
+                margin-left: {8 if self.is_small_screen else 10}px;
+            }}
         """)
         
-        # Строка поиска
+        # Строка поиска с адаптивным размером
         self.search_input = SearchLineEdit()
-        self.search_input.setPlaceholderText("🔍 Поиск функций... (Ctrl+K)")
-        self.search_input.setFixedSize(280, 35)
+        self.search_input.setPlaceholderText("🔍 Поиск... (Ctrl+K)" if self.is_small_screen else "🔍 Поиск функций... (Ctrl+K)")
+        
+        # Адаптивные размеры поиска
+        search_width = 220 if self.is_small_screen else 280
+        search_height = 30 if self.is_small_screen else 35
+        search_font_size = 11 if self.is_small_screen else 12
+        
+        self.search_input.setFixedSize(search_width, search_height)
         self.search_input.textChanged.connect(self.on_search_text_changed)
         self.search_input.returnPressed.connect(self.on_search_return)
         self.search_input.focus_gained.connect(self.search_focus_gained.emit)
         self.search_input.focus_lost.connect(self.search_focus_lost.emit)
-        self.search_input.setStyleSheet("""
-            QLineEdit {
+        self.search_input.setStyleSheet(f"""
+            QLineEdit {{
                 background-color: #1a1a1a;
                 border: 1px solid #3a3a3a;
                 border-radius: 6px;
-                padding: 8px 12px;
+                padding: {6 if self.is_small_screen else 8}px {10 if self.is_small_screen else 12}px;
                 color: #e0e0e0;
-                font-size: 12px;
+                font-size: {search_font_size}px;
                 font-weight: 400;
-            }
-            QLineEdit:focus {
+            }}
+            QLineEdit:focus {{
                 border-color: #3b82f6;
                 background-color: #262626;
-            }
-            QLineEdit:hover {
+            }}
+            QLineEdit:hover {{
                 border-color: #4a4a4a;
-            }
+            }}
         """)
         
-        # Время
+        # Время с адаптивным размером
         self.time_label = QLabel()
-        self.time_label.setStyleSheet("""
-            QLabel {
+        time_font_size = 12 if self.is_small_screen else 14
+        self.time_label.setStyleSheet(f"""
+            QLabel {{
                 color: #808080;
-                font-size: 14px;
-            }
+                font-size: {time_font_size}px;
+            }}
         """)
+        
+        # Кнопки с адаптивными размерами
+        button_size = 30 if self.is_small_screen else 35
+        button_font_size = 12 if self.is_small_screen else 14
         
         # Кнопка проверки обновлений
         self.update_button = QPushButton("🔄")
-        self.update_button.setFixedSize(35, 35)
+        self.update_button.setFixedSize(button_size, button_size)
         self.update_button.setToolTip("Проверить обновления")
         self.update_button.clicked.connect(self.check_updates_requested.emit)
-        self.update_button.setStyleSheet("""
-            QPushButton {
+        self.update_button.setStyleSheet(f"""
+            QPushButton {{
                 background-color: #1a1a1a;
                 border: 1px solid #3a3a3a;
                 border-radius: 6px;
                 color: #808080;
-                font-size: 14px;
+                font-size: {button_font_size}px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #10b981;
                 border-color: #10b981;
                 color: #ffffff;
-            }
-            QPushButton:pressed {
+            }}
+            QPushButton:pressed {{
                 background-color: #059669;
-            }
+            }}
         """)
         
         # Кнопка выхода
         self.exit_button = QPushButton("✕")
-        self.exit_button.setFixedSize(35, 35)
+        self.exit_button.setFixedSize(button_size, button_size)
         self.exit_button.clicked.connect(self.exit_requested.emit)
-        self.exit_button.setStyleSheet("""
-            QPushButton {
+        exit_font_size = button_font_size + 2 if not self.is_small_screen else button_font_size
+        self.exit_button.setStyleSheet(f"""
+            QPushButton {{
                 background-color: #1a1a1a;
                 border: 1px solid #3a3a3a;
                 border-radius: 6px;
                 color: #808080;
-                font-size: 16px;
+                font-size: {exit_font_size}px;
                 font-weight: bold;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #ef4444;
                 border-color: #ef4444;
                 color: #ffffff;
-            }
-            QPushButton:pressed {
+            }}
+            QPushButton:pressed {{
                 background-color: #dc2626;
-            }
+            }}
         """)
         
         self.update_time()
@@ -124,56 +146,61 @@ class HeaderWidget(QFrame):
         timer.timeout.connect(self.update_time)
         timer.start(1000)
         
+        # Компоновка элементов
         layout.addWidget(logo_label)
         layout.addWidget(version_label)
-        layout.addStretch()
+        
+        # Для маленьких экранов убираем некоторые растяжки
+        if not self.is_small_screen:
+            layout.addStretch()
+        else:
+            layout.addSpacing(10)
+            
         layout.addWidget(self.search_input)
-        layout.addStretch()
+        
+        if not self.is_small_screen:
+            layout.addStretch()
+        else:
+            layout.addSpacing(10)
+            
         layout.addWidget(self.time_label)
         layout.addWidget(self.update_button)
         layout.addWidget(self.exit_button)
         
     def on_search_text_changed(self, text):
-        """Обработка изменения текста в поиске"""
         self.search_text_changed.emit(text)
         
-        # Если есть текст, показываем выпадающий поиск
         if text.strip():
             self.emit_search_position()
         
     def on_search_return(self):
-        """Обработка Enter в поиске"""
-        # Сигнал для выполнения первого результата будет обработан в main_window
         pass
         
     def emit_search_position(self):
-        """Отправить координаты для позиционирования выпадающего поиска"""
-        # Получаем координаты относительно родительского виджета (главного окна)
         parent_widget = self.parent()
         if parent_widget:
-            # Позиция строки поиска относительно главного окна
             search_pos = self.search_input.mapTo(parent_widget, self.search_input.rect().bottomLeft())
             self.search_position_requested.emit(search_pos.x(), search_pos.y() + 5)
         
     def focus_search(self):
-        """Установить фокус на поиск"""
         self.search_input.setFocus()
         self.search_input.selectAll()
         
     def clear_search(self):
-        """Очистить поиск"""
         self.search_input.clear()
         
     def get_search_text(self):
-        """Получить текст поиска"""
         return self.search_input.text()
         
     def update_time(self):
-        current_time = QDateTime.currentDateTime().toString("dd.MM.yyyy HH:mm:ss")
+        # Для маленьких экранов сокращенный формат времени
+        if self.is_small_screen:
+            current_time = QDateTime.currentDateTime().toString("dd.MM HH:mm")
+        else:
+            current_time = QDateTime.currentDateTime().toString("dd.MM.yyyy HH:mm:ss")
         self.time_label.setText(current_time)
 
 class SearchLineEdit(QLineEdit):
-    """Кастомный QLineEdit с сигналами фокуса"""
     focus_gained = pyqtSignal()
     focus_lost = pyqtSignal()
     

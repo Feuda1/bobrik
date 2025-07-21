@@ -7,12 +7,15 @@ from managers.network_manager import NetworkManager
 from managers.cleanup_manager import CleanupManager
 from managers.iiko_manager import IikoManager
 from managers.rndis_manager import RndisManager
+from config import LAYOUT_PARAMS, get_is_small_screen
 
 class SystemTab(QWidget):
     log_signal = pyqtSignal(str, str)
     
     def __init__(self):
         super().__init__()
+        self.is_small_screen = get_is_small_screen()
+        
         self.touchscreen_manager = TouchscreenManager()
         self.touchscreen_manager.log_signal.connect(self.log_signal.emit)
         self.touchscreen_manager.status_signal.connect(self.update_touchscreen_button)
@@ -40,209 +43,196 @@ class SystemTab(QWidget):
         
     def init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(15, 15, 15, 15)
-        layout.setSpacing(15)
+        margins = LAYOUT_PARAMS['content_margins']
+        spacing = LAYOUT_PARAMS['content_spacing']
+        layout.setContentsMargins(margins, margins, margins, margins)
+        layout.setSpacing(spacing)
         
         title = QLabel("Системные функции")
-        title.setStyleSheet("""
-            QLabel {
+        title_size = 16 if self.is_small_screen else 18
+        title.setStyleSheet(f"""
+            QLabel {{
                 color: #ffffff;
-                font-size: 18px;
+                font-size: {title_size}px;
                 font-weight: 500;
                 padding-bottom: 5px;
-            }
+            }}
         """)
         layout.addWidget(title)
         
+        # Адаптивные размеры контейнера кнопок
+        buttons_per_row = LAYOUT_PARAMS['buttons_per_row']
+        button_width = LAYOUT_PARAMS['button_width']
+        button_height = LAYOUT_PARAMS['button_height']
+        
+        # Рассчитываем размер контейнера на основе количества кнопок
+        container_width = buttons_per_row * button_width + (buttons_per_row - 1) * 5  # 5px spacing
+        container_height = 200 if not self.is_small_screen else 160
+        
         buttons_container = QWidget()
-        buttons_container.setFixedSize(750, 200)  # Увеличиваем ширину для 5 кнопок
+        buttons_container.setFixedSize(container_width, container_height)
         buttons_container.setStyleSheet("QWidget { background-color: transparent; }")
         
         grid = QGridLayout(buttons_container)
         grid.setSpacing(5)
         grid.setContentsMargins(0, 0, 0, 0)
         
-        self.touchscreen_button = self.create_button("Сенсорный\nэкран", False, is_toggle=True)
-        self.touchscreen_button.clicked.connect(self.toggle_touchscreen)
-        grid.addWidget(self.touchscreen_button, 0, 0)
+        # Создаем кнопки с адаптивным расположением
+        buttons_data = [
+            ("Сенсорный\nэкран", self.toggle_touchscreen, True),  # is_toggle = True
+            ("Ребут\nсенсорного", self.reboot_touchscreen, False),
+            ("Перезагрузка\nсистемы", self.request_reboot, False),
+            ("Очистка\nTemp файлов", self.clean_temp_files, False),
+            ("Перезапуск\nCOM портов", self.restart_com_ports, False),
+            ("Управление\nслужбами", self.open_services, False),
+            ("Отключить\nзащиту", self.disable_security, False),
+            ("Папка\nавтозагрузки", self.open_startup, False),
+            ("Панель\nуправления", self.open_control_panel, False),
+            ("Перезапуск\nдисп. печати", self.restart_print_spooler, False),
+            ("Очистка\nочереди печати", self.clear_print_queue, False),
+            ("Настройка\nTLS 1.2", self.configure_tls, False),
+            ("Перезапуск\nRNDIS", self.toggle_internet_sharing, False)
+        ]
         
-        # Новая кнопка перезапуска сенсорного экрана
-        touchscreen_reboot_button = self.create_button("Ребут\nсенсорного", False)
-        touchscreen_reboot_button.clicked.connect(self.reboot_touchscreen)
-        touchscreen_reboot_button.setStyleSheet("""
-            QPushButton {
-                background-color: #1e40af;
-                border: 1px solid #3b82f6;
-                border-radius: 4px;
-                color: #3b82f6;
-                font-size: 11px;
-                font-weight: 500;
-                padding: 4px 2px;
-            }
-            QPushButton:hover {
-                background-color: #1d4ed8;
-                border-color: #60a5fa;
-            }
-            QPushButton:pressed {
-                background-color: #1e3a8a;
-            }
-        """)
-        grid.addWidget(touchscreen_reboot_button, 0, 1)
+        self.button_widgets = {}
         
-        self.restart_button = self.create_button("Перезагрузка\nсистемы", False)
-        self.restart_button.clicked.connect(self.request_reboot)
-        grid.addWidget(self.restart_button, 0, 2)
-        
-        cleanup_button = self.create_button("Очистка\nTemp файлов", False)
-        cleanup_button.clicked.connect(self.clean_temp_files)
-        grid.addWidget(cleanup_button, 0, 3)
-        
-        com_button = self.create_button("Перезапуск\nCOM портов", False)
-        com_button.clicked.connect(self.restart_com_ports)
-        grid.addWidget(com_button, 0, 4)
-        
-        services_button = self.create_button("Управление\nслужбами", False)
-        services_button.clicked.connect(self.open_services)
-        grid.addWidget(services_button, 1, 0)
-        
-        security_button = self.create_button("Отключить\nзащиту", False)
-        security_button.clicked.connect(self.disable_security)
-        grid.addWidget(security_button, 1, 1)
-        
-        startup_button = self.create_button("Папка\nавтозагрузки", False)
-        startup_button.clicked.connect(self.open_startup)
-        grid.addWidget(startup_button, 1, 2)
-        
-        control_button = self.create_button("Панель\nуправления", False)
-        control_button.clicked.connect(self.open_control_panel)
-        grid.addWidget(control_button, 1, 3)
-        
-        print_restart_button = self.create_button("Перезапуск\nдисп. печати", False)
-        print_restart_button.clicked.connect(self.restart_print_spooler)
-        grid.addWidget(print_restart_button, 1, 4)
-        
-        print_clear_button = self.create_button("Очистка\nочереди печати", False)
-        print_clear_button.clicked.connect(self.clear_print_queue)
-        grid.addWidget(print_clear_button, 2, 0)
-        
-        tls_button = self.create_button("Настройка\nTLS 1.2", False)
-        tls_button.clicked.connect(self.configure_tls)
-        grid.addWidget(tls_button, 2, 1)
-        
-        rndis_button = self.create_button("Перезапуск\nRNDIS", False)
-        rndis_button.clicked.connect(self.toggle_internet_sharing)
-        rndis_button.setStyleSheet("""
-            QPushButton {
-                background-color: #1e40af;
-                border: 1px solid #3b82f6;
-                border-radius: 4px;
-                color: #3b82f6;
-                font-size: 11px;
-                font-weight: 500;
-                padding: 4px 2px;
-            }
-            QPushButton:hover {
-                background-color: #1d4ed8;
-                border-color: #60a5fa;
-            }
-            QPushButton:pressed {
-                background-color: #1e3a8a;
-            }
-        """)
-        grid.addWidget(rndis_button, 2, 2)
+        for i, (text, handler, is_toggle) in enumerate(buttons_data):
+            row = i // buttons_per_row
+            col = i % buttons_per_row
+            
+            button = self.create_button(text, False, is_toggle=is_toggle)
+            button.clicked.connect(handler)
+            
+            # Специальные стили для некоторых кнопок
+            if "Ребут\nсенсорного" in text or "Перезапуск\nRNDIS" in text:
+                button.setStyleSheet(self.get_special_button_style())
+            
+            grid.addWidget(button, row, col)
+            
+            # Сохраняем ссылку на кнопку сенсорного экрана для обновления
+            if "Сенсорный\nэкран" in text:
+                self.touchscreen_button = button
+            
+            self.button_widgets[text] = button
         
         layout.addWidget(buttons_container)
         layout.addStretch()
         
     def create_button(self, text, is_active, enabled=True, is_toggle=False):
         button = QPushButton(text)
-        button.setFixedSize(105, 45)
+        button_width = LAYOUT_PARAMS['button_width']
+        button_height = LAYOUT_PARAMS['button_height']
+        button.setFixedSize(button_width, button_height)
         button.setCursor(Qt.CursorShape.PointingHandCursor if enabled else Qt.CursorShape.ForbiddenCursor)
         button.setEnabled(enabled)
         self.update_button_style(button, is_active, enabled, is_toggle)
         return button
         
     def update_button_style(self, button, is_active, enabled=True, is_toggle=False):
+        font_size = 10 if self.is_small_screen else 11
+        
         if not enabled:
-            style = """
-                QPushButton {
+            style = f"""
+                QPushButton {{
                     background-color: #0f0f0f;
                     border: 1px solid #1a1a1a;
                     border-radius: 4px;
                     color: #404040;
-                    font-size: 11px;
+                    font-size: {font_size}px;
                     font-weight: 500;
                     padding: 4px 2px;
-                }
+                }}
             """
         elif is_toggle:
             if is_active:
-                style = """
-                    QPushButton {
+                style = f"""
+                    QPushButton {{
                         background-color: #065f46;
                         border: 1px solid #10b981;
                         border-radius: 4px;
                         color: #10b981;
-                        font-size: 11px;
+                        font-size: {font_size}px;
                         font-weight: 500;
                         padding: 4px 2px;
-                    }
-                    QPushButton:hover {
+                    }}
+                    QPushButton:hover {{
                         background-color: #047857;
                         border-color: #34d399;
-                    }
-                    QPushButton:pressed {
+                    }}
+                    QPushButton:pressed {{
                         background-color: #064e3b;
-                    }
+                    }}
                 """
             else:
-                style = """
-                    QPushButton {
+                style = f"""
+                    QPushButton {{
                         background-color: #7f1d1d;
                         border: 1px solid #ef4444;
                         border-radius: 4px;
                         color: #ef4444;
-                        font-size: 11px;
+                        font-size: {font_size}px;
                         font-weight: 500;
                         padding: 4px 2px;
-                    }
-                    QPushButton:hover {
+                    }}
+                    QPushButton:hover {{
                         background-color: #991b1b;
                         border-color: #f87171;
-                    }
-                    QPushButton:pressed {
+                    }}
+                    QPushButton:pressed {{
                         background-color: #7f1d1d;
-                    }
+                    }}
                 """
         else:
-            style = """
-                QPushButton {
+            style = f"""
+                QPushButton {{
                     background-color: #2a2a2a;
                     border: 1px solid #3a3a3a;
                     border-radius: 4px;
                     color: #e0e0e0;
-                    font-size: 11px;
+                    font-size: {font_size}px;
                     font-weight: 500;
                     padding: 4px 2px;
-                }
-                QPushButton:hover {
+                }}
+                QPushButton:hover {{
                     background-color: #3a3a3a;
                     border-color: #4a4a4a;
-                }
-                QPushButton:pressed {
+                }}
+                QPushButton:pressed {{
                     background-color: #1a1a1a;
-                }
+                }}
             """
         button.setStyleSheet(style)
         
+    def get_special_button_style(self):
+        """Стиль для специальных кнопок (синие)"""
+        font_size = 10 if self.is_small_screen else 11
+        return f"""
+            QPushButton {{
+                background-color: #1e40af;
+                border: 1px solid #3b82f6;
+                border-radius: 4px;
+                color: #3b82f6;
+                font-size: {font_size}px;
+                font-weight: 500;
+                padding: 4px 2px;
+            }}
+            QPushButton:hover {{
+                background-color: #1d4ed8;
+                border-color: #60a5fa;
+            }}
+            QPushButton:pressed {{
+                background-color: #1e3a8a;
+            }}
+        """
+        
     def update_touchscreen_button(self, is_disabled):
-        self.update_button_style(self.touchscreen_button, not is_disabled, True, is_toggle=True)
+        if hasattr(self, 'touchscreen_button'):
+            self.update_button_style(self.touchscreen_button, not is_disabled, True, is_toggle=True)
         
     def toggle_touchscreen(self):
         self.touchscreen_manager.toggle_touchscreen()
         
     def reboot_touchscreen(self):
-        """Перезапускает сенсорный экран"""
         self.touchscreen_manager.reboot_touchscreen()
         
     def request_reboot(self):

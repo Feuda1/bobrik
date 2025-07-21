@@ -1,8 +1,51 @@
 import os
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QRect
 
 WINDOW_TITLE = ""
-WINDOW_WIDTH = 1200
-WINDOW_HEIGHT = 700
+
+# Функция для определения размера экрана и адаптивных размеров
+def get_adaptive_window_size():
+    """Определяет оптимальный размер окна на основе разрешения экрана"""
+    app = QApplication.instance()
+    if app is None:
+        # Если приложение еще не создано, используем значения по умолчанию
+        return 1200, 700
+    
+    # Получаем размер основного экрана
+    screen = app.primaryScreen()
+    screen_geometry = screen.availableGeometry()
+    screen_width = screen_geometry.width()
+    screen_height = screen_geometry.height()
+    
+    # Определяем размеры окна на основе разрешения экрана
+    if screen_width <= 1024 or screen_height <= 768:
+        # Маленькие экраны (POS терминалы, старые мониторы)
+        window_width = min(950, screen_width - 50)
+        window_height = min(600, screen_height - 50)
+    elif screen_width <= 1366 or screen_height <= 768:
+        # Средние экраны (ноутбуки)
+        window_width = min(1100, screen_width - 100)
+        window_height = min(650, screen_height - 100)
+    else:
+        # Большие экраны (настольные мониторы)
+        window_width = min(1200, screen_width - 200)
+        window_height = min(700, screen_height - 150)
+    
+    return window_width, window_height
+
+def get_is_small_screen():
+    """Проверяет, является ли экран маленьким"""
+    app = QApplication.instance()
+    if app is None:
+        return False
+    
+    screen = app.primaryScreen()
+    screen_geometry = screen.availableGeometry()
+    return screen_geometry.width() <= 1024 or screen_geometry.height() <= 768
+
+# Адаптивные размеры
+WINDOW_WIDTH, WINDOW_HEIGHT = get_adaptive_window_size()
 
 COLORS = {
     "background": "#0a0a0a",
@@ -23,12 +66,55 @@ COLORS = {
     "timestamp": "#6366f1"
 }
 
-FONTS = {
-    "logo": {"size": 24, "weight": 600},
-    "title": {"size": 18, "weight": 500},
-    "button": {"size": 16, "weight": 500},
-    "console": {"size": 13, "family": "'Consolas', 'Monaco', monospace"}
-}
+def get_adaptive_fonts():
+    """Возвращает адаптивные размеры шрифтов"""
+    is_small = get_is_small_screen()
+    
+    if is_small:
+        return {
+            "logo": {"size": 20, "weight": 600},
+            "title": {"size": 16, "weight": 500},
+            "button": {"size": 14, "weight": 500},
+            "console": {"size": 11, "family": "'Consolas', 'Monaco', monospace"}
+        }
+    else:
+        return {
+            "logo": {"size": 24, "weight": 600},
+            "title": {"size": 18, "weight": 500},
+            "button": {"size": 16, "weight": 500},
+            "console": {"size": 13, "family": "'Consolas', 'Monaco', monospace"}
+        }
+
+FONTS = get_adaptive_fonts()
+
+def get_adaptive_layout_params():
+    """Возвращает адаптивные параметры интерфейса"""
+    is_small = get_is_small_screen()
+    
+    if is_small:
+        return {
+            "header_height": 60,
+            "tabs_width": 100,
+            "button_width": 90,
+            "button_height": 40,
+            "buttons_per_row": 4,  # Меньше кнопок в ряду для маленьких экранов
+            "content_margins": 10,
+            "content_spacing": 10,
+            "console_min_height": 200
+        }
+    else:
+        return {
+            "header_height": 70,
+            "tabs_width": 120,
+            "button_width": 105,
+            "button_height": 45,
+            "buttons_per_row": 5,
+            "content_margins": 15,
+            "content_spacing": 15,
+            "console_min_height": 250
+        }
+
+LAYOUT_PARAMS = get_adaptive_layout_params()
 
 TOUCHSCREEN_KEYWORDS = [
     'touch', 'hid-compliant', 'touchscreen', 'digitizer', 

@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QGridLayout, QWidget, QFrame)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QPalette, QColor
+from config import get_is_small_screen
 
 class TouchAuthDialog(QDialog):
     auth_accepted = pyqtSignal()
@@ -10,64 +11,86 @@ class TouchAuthDialog(QDialog):
         super().__init__(parent)
         self.correct_pin = "2289"
         self.current_pin = ""
+        self.is_small_screen = get_is_small_screen()
         self.init_ui()
         
     def init_ui(self):
         self.setWindowTitle("bobrik - Авторизация")
-        self.setFixedSize(380, 520)
+        
+        # Адаптивные размеры диалога
+        if self.is_small_screen:
+            dialog_width, dialog_height = 320, 450
+            title_size = 22
+            desc_size = 13
+            pin_size = 35
+            button_size = 55
+            keypad_height = 240
+        else:
+            dialog_width, dialog_height = 380, 520
+            title_size = 26
+            desc_size = 15
+            pin_size = 40
+            button_size = 65
+            keypad_height = 280
+        
+        self.setFixedSize(dialog_width, dialog_height)
         self.setWindowFlags(Qt.WindowType.Dialog | Qt.WindowType.WindowStaysOnTopHint)
         
         self.center_window()
         
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(25, 25, 25, 25)
-        main_layout.setSpacing(12)
+        margin = 20 if self.is_small_screen else 25
+        spacing = 10 if self.is_small_screen else 12
+        main_layout.setContentsMargins(margin, margin, margin, margin)
+        main_layout.setSpacing(spacing)
         
         # Заголовок
         title_label = QLabel("bobrik")
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_label.setStyleSheet("""
-            QLabel {
+        title_label.setStyleSheet(f"""
+            QLabel {{
                 color: #ffffff;
-                font-size: 26px;
+                font-size: {title_size}px;
                 font-weight: 600;
                 padding: 8px;
-            }
+            }}
         """)
         main_layout.addWidget(title_label)
         
         desc_label = QLabel("Введите PIN-код")
         desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        desc_label.setStyleSheet("""
-            QLabel {
+        desc_label.setStyleSheet(f"""
+            QLabel {{
                 color: #808080;
-                font-size: 15px;
+                font-size: {desc_size}px;
                 margin-bottom: 3px;
-            }
+            }}
         """)
         main_layout.addWidget(desc_label)
         
         # PIN индикаторы
         pin_container = QWidget()
-        pin_container.setFixedHeight(55)
+        pin_container_height = 50 if self.is_small_screen else 55
+        pin_container.setFixedHeight(pin_container_height)
         pin_layout = QHBoxLayout(pin_container)
-        pin_layout.setSpacing(12)
+        pin_spacing = 10 if self.is_small_screen else 12
+        pin_layout.setSpacing(pin_spacing)
         pin_layout.setContentsMargins(0, 5, 0, 5)
         
         self.pin_indicators = []
         for i in range(4):
             indicator = QLabel("●")
             indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            indicator.setFixedSize(40, 40)
-            indicator.setStyleSheet("""
-                QLabel {
+            indicator.setFixedSize(pin_size, pin_size)
+            indicator.setStyleSheet(f"""
+                QLabel {{
                     background-color: #141414;
                     border: 1px solid #1f1f1f;
                     border-radius: 6px;
                     color: #404040;
-                    font-size: 14px;
+                    font-size: {12 if self.is_small_screen else 14}px;
                     font-weight: 500;
-                }
+                }}
             """)
             self.pin_indicators.append(indicator)
             pin_layout.addWidget(indicator)
@@ -79,18 +102,19 @@ class TouchAuthDialog(QDialog):
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setFixedHeight(18)
-        self.status_label.setStyleSheet("""
-            QLabel {
+        status_size = 12 if self.is_small_screen else 13
+        self.status_label.setStyleSheet(f"""
+            QLabel {{
                 color: #808080;
-                font-size: 13px;
+                font-size: {status_size}px;
                 font-weight: 500;
-            }
+            }}
         """)
         main_layout.addWidget(self.status_label)
         
         # Клавиатура
         keypad_frame = QFrame()
-        keypad_frame.setFixedHeight(280)
+        keypad_frame.setFixedHeight(keypad_height)
         keypad_frame.setStyleSheet("""
             QFrame {
                 background-color: #141414;
@@ -100,44 +124,47 @@ class TouchAuthDialog(QDialog):
         """)
         
         keypad_layout = QGridLayout(keypad_frame)
-        keypad_layout.setSpacing(10)
-        keypad_layout.setContentsMargins(18, 18, 18, 18)
+        keypad_spacing = 8 if self.is_small_screen else 10
+        keypad_margin = 15 if self.is_small_screen else 18
+        keypad_layout.setSpacing(keypad_spacing)
+        keypad_layout.setContentsMargins(keypad_margin, keypad_margin, keypad_margin, keypad_margin)
         
         # Создаем квадратные кнопки цифр
         self.number_buttons = []
         for i in range(1, 10):
-            button = self.create_number_button(str(i))
+            button = self.create_number_button(str(i), button_size)
             row = (i - 1) // 3
             col = (i - 1) % 3
             keypad_layout.addWidget(button, row, col)
             self.number_buttons.append(button)
             
         # Кнопка 0
-        zero_button = self.create_number_button("0")
+        zero_button = self.create_number_button("0", button_size)
         keypad_layout.addWidget(zero_button, 3, 1)
         self.number_buttons.append(zero_button)
         
         # Кнопка очистки
         clear_button = QPushButton("⌫")
-        clear_button.setFixedSize(65, 65)
+        clear_button.setFixedSize(button_size, button_size)
         clear_button.clicked.connect(self.clear_pin)
-        clear_button.setStyleSheet("""
-            QPushButton {
+        clear_font_size = 16 if self.is_small_screen else 18
+        clear_button.setStyleSheet(f"""
+            QPushButton {{
                 background-color: #1a1a1a;
                 border: 1px solid #2a2a2a;
                 border-radius: 8px;
                 color: #808080;
-                font-size: 18px;
+                font-size: {clear_font_size}px;
                 font-weight: 500;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #262626;
                 border-color: #3a3a3a;
                 color: #e0e0e0;
-            }
-            QPushButton:pressed {
+            }}
+            QPushButton:pressed {{
                 background-color: #1a1a1a;
-            }
+            }}
         """)
         keypad_layout.addWidget(clear_button, 3, 2)
         
@@ -151,29 +178,31 @@ class TouchAuthDialog(QDialog):
             }
         """)
         
-    def create_number_button(self, number):
+    def create_number_button(self, number, size):
         """Создает квадратную кнопку цифры"""
         button = QPushButton(number)
-        button.setFixedSize(65, 65)
+        button.setFixedSize(size, size)
         button.clicked.connect(lambda: self.add_digit(number))
-        button.setStyleSheet("""
-            QPushButton {
+        
+        button_font_size = 18 if self.is_small_screen else 20
+        button.setStyleSheet(f"""
+            QPushButton {{
                 background-color: #1a1a1a;
                 border: 1px solid #2a2a2a;
                 border-radius: 8px;
                 color: #e0e0e0;
-                font-size: 20px;
+                font-size: {button_font_size}px;
                 font-weight: 600;
-            }
-            QPushButton:hover {
+            }}
+            QPushButton:hover {{
                 background-color: #262626;
                 border-color: #3a3a3a;
                 color: #ffffff;
-            }
-            QPushButton:pressed {
+            }}
+            QPushButton:pressed {{
                 background-color: #333333;
                 border-color: #4a4a4a;
-            }
+            }}
         """)
         return button
         
@@ -199,7 +228,7 @@ class TouchAuthDialog(QDialog):
             self.update_indicators()
             
             if len(self.current_pin) == 4:
-                QTimer.singleShot(100, self.check_pin)  # Было 200, стало 100
+                QTimer.singleShot(100, self.check_pin)
                 
     def clear_pin(self):
         """Очищает PIN"""
@@ -209,83 +238,94 @@ class TouchAuthDialog(QDialog):
         
     def update_indicators(self):
         """Обновляет индикаторы PIN"""
+        pin_size = 35 if self.is_small_screen else 40
+        font_size = 12 if self.is_small_screen else 14
+        
         for i, indicator in enumerate(self.pin_indicators):
             if i < len(self.current_pin):
-                indicator.setStyleSheet("""
-                    QLabel {
+                indicator.setStyleSheet(f"""
+                    QLabel {{
                         background-color: #2a2a2a;
                         border: 1px solid #4a4a4a;
                         border-radius: 6px;
                         color: #ffffff;
-                        font-size: 14px;
+                        font-size: {font_size}px;
                         font-weight: 500;
-                    }
+                    }}
                 """)
             else:
-                indicator.setStyleSheet("""
-                    QLabel {
+                indicator.setStyleSheet(f"""
+                    QLabel {{
                         background-color: #141414;
                         border: 1px solid #1f1f1f;
                         border-radius: 6px;
                         color: #404040;
-                        font-size: 14px;
+                        font-size: {font_size}px;
                         font-weight: 500;
-                    }
+                    }}
                 """)
                 
     def check_pin(self):
         """Проверяет PIN"""
         if self.current_pin == self.correct_pin:
             self.show_success()
-            QTimer.singleShot(300, self.accept_auth)  # Было 1000, стало 300
+            QTimer.singleShot(300, self.accept_auth)
         else:
             self.show_error()
-            QTimer.singleShot(800, self.clear_pin)  # Было 1500, стало 800
+            QTimer.singleShot(800, self.clear_pin)
             
     def show_success(self):
         """Показывает успешную авторизацию"""
         self.status_label.setText("✅ Доступ разрешен")
-        self.status_label.setStyleSheet("""
-            QLabel {
+        status_size = 12 if self.is_small_screen else 13
+        self.status_label.setStyleSheet(f"""
+            QLabel {{
                 color: #10b981;
-                font-size: 13px;
+                font-size: {status_size}px;
                 font-weight: 600;
-            }
+            }}
         """)
         
+        pin_size = 35 if self.is_small_screen else 40
+        font_size = 12 if self.is_small_screen else 14
+        
         for indicator in self.pin_indicators:
-            indicator.setStyleSheet("""
-                QLabel {
+            indicator.setStyleSheet(f"""
+                QLabel {{
                     background-color: #065f46;
                     border: 1px solid #10b981;
                     border-radius: 6px;
                     color: #10b981;
-                    font-size: 14px;
+                    font-size: {font_size}px;
                     font-weight: 500;
-                }
+                }}
             """)
             
     def show_error(self):
         """Показывает ошибку"""
         self.status_label.setText("❌ Неверный PIN-код")
-        self.status_label.setStyleSheet("""
-            QLabel {
+        status_size = 12 if self.is_small_screen else 13
+        self.status_label.setStyleSheet(f"""
+            QLabel {{
                 color: #ef4444;
-                font-size: 13px;
+                font-size: {status_size}px;
                 font-weight: 600;
-            }
+            }}
         """)
         
+        pin_size = 35 if self.is_small_screen else 40
+        font_size = 12 if self.is_small_screen else 14
+        
         for indicator in self.pin_indicators:
-            indicator.setStyleSheet("""
-                QLabel {
+            indicator.setStyleSheet(f"""
+                QLabel {{
                     background-color: #7f1d1d;
                     border: 1px solid #ef4444;
                     border-radius: 6px;
                     color: #ef4444;
-                    font-size: 14px;
+                    font-size: {font_size}px;
                     font-weight: 500;
-                }
+                }}
             """)
             
     def accept_auth(self):
@@ -304,12 +344,11 @@ class TouchAuthDialog(QDialog):
             self.clear_pin()
         elif key == Qt.Key.Key_Return:
             if len(self.current_pin) == 4:
-                self.check_pin()  # Мгновенная проверка по Enter
+                self.check_pin()
             elif len(self.current_pin) == 0:
-                # Быстрый ввод правильного PIN-кода по Enter
                 self.current_pin = self.correct_pin
                 self.update_indicators()
-                QTimer.singleShot(50, self.check_pin)  # Почти мгновенно
+                QTimer.singleShot(50, self.check_pin)
         elif key == Qt.Key.Key_Escape:
             self.reject()
             

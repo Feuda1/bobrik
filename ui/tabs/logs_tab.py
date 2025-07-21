@@ -28,7 +28,7 @@ class LogsTab(QWidget):
         layout.addWidget(title)
         
         buttons_container = QWidget()
-        buttons_container.setFixedSize(435, 150)
+        buttons_container.setFixedSize(545, 150)  # Увеличиваем ширину для 5 кнопок
         buttons_container.setStyleSheet("QWidget { background-color: transparent; }")
         
         grid = QGridLayout(buttons_container)
@@ -50,6 +50,10 @@ class LogsTab(QWidget):
         dual_button = self.create_button("Лог\ndualConnector", False)
         dual_button.clicked.connect(lambda: self.open_log("PaymentSystem.DualConnector"))
         grid.addWidget(dual_button, 0, 3)
+        
+        alcohol_button = self.create_button("Лог\nAlcoholMarking", False)
+        alcohol_button.clicked.connect(lambda: self.open_log("AlcoholMarkingPlugin"))
+        grid.addWidget(alcohol_button, 0, 4)
         
         sber_button = self.create_button("Лог\nSberbankPlugin", False)
         sber_button.clicked.connect(lambda: self.open_log("SberbankPlugin"))
@@ -87,7 +91,7 @@ class LogsTab(QWidget):
                 background-color: #1e3a8a;
             }
         """)
-        grid.addWidget(collect_button, 2, 0)
+        grid.addWidget(collect_button, 1, 4)
         
         layout.addWidget(buttons_container)
         layout.addStretch()
