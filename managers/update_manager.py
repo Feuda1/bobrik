@@ -20,7 +20,7 @@ class SimpleUpdateManager(QThread):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent = parent
-        self.current_version = "1.1.2"  # Текущая версия приложения
+        self.current_version = "1.1.3"  # Текущая версия приложения
         self.github_repo = "Feuda1/bobrik"
         self.version_url = f"https://raw.githubusercontent.com/{self.github_repo}/main/version.json"
         self.exe_url = f"https://github.com/{self.github_repo}/releases/latest/download/bobrik.exe"
@@ -182,6 +182,8 @@ class SimpleUpdateManager(QThread):
             temp_dir = tempfile.gettempdir()
             script_path = os.path.join(temp_dir, "bobrik_update.bat")
             
+            self.log_signal.emit(f"Создание скрипта обновления: {script_path}", "info")
+            
             # Создаем batch скрипт для Windows (без эмодзи)
             script_content = f'''@echo off
 echo Obnovlenie bobrik...
@@ -206,50 +208,80 @@ del "%~f0"
             with open(script_path, 'w', encoding='ascii', errors='ignore') as f:
                 f.write(script_content)
                 
-            # Используем QTimer для показа финального диалога в главном потоке
-            QTimer.singleShot(100, lambda: self._show_final_confirmation(script_path, new_exe_path))
+            self.log_signal.emit("Скрипт создан, показываем диалог подтверждения", "info")
+            
+            # Прямой вызов в том же потоке
+            self._show_final_confirmation_direct(script_path, new_exe_path)
                 
         except Exception as e:
-            self.log_signal.emit(f"❌ Ошибка создания скрипта обновления: {str(e)}", "error")
+            self.log_signal.emit(f"Ошибка создания скрипта обновления: {str(e)}", "error")
             
-    def _show_final_confirmation(self, script_path, new_exe_path):
-        """Показывает финальное подтверждение в главном потоке"""
+    def _show_final_confirmation_direct(self, script_path, new_exe_path):
+        """Прямой показ диалога подтверждения"""
         try:
+            self.log_signal.emit("Вызываем диалог подтверждения...", "info")
+            
             if not self.parent:
+                self.log_signal.emit("Родительский виджет не найден", "error")
                 return
                 
+            # Создаем диалог без эмодзи
             msg = QMessageBox(self.parent)
             msg.setWindowTitle('Готово к установке')
-            msg.setText('✅ Обновление загружено!\n\n🔄 Сейчас bobrik закроется и обновится.\n\n⚡ Продолжить?')
+            msg.setText('Обновление загружено!\n\nСейчас bobrik закроется и обновится.\n\nПродолжить?')
             msg.setIcon(QMessageBox.Icon.Question)
             
-            install_button = msg.addButton('🚀 Обновить', QMessageBox.ButtonRole.YesRole)
-            cancel_button = msg.addButton('❌ Отмена', QMessageBox.ButtonRole.NoRole)
+            install_button = msg.addButton('Обновить', QMessageBox.ButtonRole.YesRole)
+            cancel_button = msg.addButton('Отмена', QMessageBox.ButtonRole.NoRole)
             
+            self.log_signal.emit("Показываем диалог...", "info")
             result = msg.exec()
+            self.log_signal.emit("Диалог закрыт", "info")
             
             if msg.clickedButton() == install_button:
-                self.log_signal.emit("🔄 Запуск установки обновления...", "info")
+                self.log_signal.emit("Пользователь согласился на обновление", "info")
+                self.log_signal.emit("Запуск установки обновления...", "info")
                 
                 # Запускаем скрипт обновления
-                subprocess.Popen([script_path], shell=True)
+                try:
+                    self.log_signal.emit(f"Запуск скрипта: {script_path}", "info")
+                    process = subprocess.Popen([script_path], shell=True, cwd=os.path.dirname(script_path))
+                    self.log_signal.emit(f"Скрипт запущен с PID: {process.pid}", "info")
+                except Exception as e:
+                    self.log_signal.emit(f"Ошибка запуска скрипта: {str(e)}", "error")
+                    return
                 
                 # Закрываем приложение
-                if hasattr(self.parent, 'quit_application'):
-                    QTimer.singleShot(500, self.parent.quit_application)
-                else:
-                    QTimer.singleShot(500, lambda: sys.exit(0))
+                self.log_signal.emit("Закрываем приложение через 2 секунды...", "info")
+                QTimer.singleShot(2000, self._close_application)
             else:
+                self.log_signal.emit("Пользователь отменил обновление", "info")
                 # Удаляем временные файлы
                 try:
-                    os.remove(new_exe_path)
-                    os.remove(script_path)
-                except:
-                    pass
-                self.log_signal.emit("❌ Установка отменена", "info")
+                    if os.path.exists(new_exe_path):
+                        os.remove(new_exe_path)
+                        self.log_signal.emit("Временный exe удален", "info")
+                    if os.path.exists(script_path):
+                        os.remove(script_path)
+                        self.log_signal.emit("Скрипт удален", "info")
+                except Exception as e:
+                    self.log_signal.emit(f"Ошибка удаления файлов: {str(e)}", "warning")
+                self.log_signal.emit("Установка отменена", "info")
                 
         except Exception as e:
-            self.log_signal.emit(f"❌ Ошибка финального подтверждения: {str(e)}", "error")
+            self.log_signal.emit(f"Ошибка диалога подтверждения: {str(e)}", "error")
+            
+    def _close_application(self):
+        """Закрывает приложение"""
+        try:
+            self.log_signal.emit("Закрываем приложение...", "info")
+            if hasattr(self.parent, 'quit_application'):
+                self.parent.quit_application()
+            else:
+                sys.exit(0)
+        except Exception as e:
+            self.log_signal.emit(f"Ошибка закрытия: {str(e)}", "error")
+            sys.exit(0)
             
     def set_github_repo(self, repo_path):
         """Устанавливает путь к репозиторию GitHub"""
