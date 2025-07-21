@@ -36,7 +36,7 @@ class HeaderWidget(QFrame):
         logo_label.setStyleSheet(logo_style)
         
         # Версия
-        version_label = QLabel("v1.1.0")
+        version_label = QLabel("v1.1.1")
         version_size = 12 if self.is_small_screen else 14
         version_label.setStyleSheet(f"""
             QLabel {{

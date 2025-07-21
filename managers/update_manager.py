@@ -5,7 +5,7 @@ import json
 import tempfile
 import threading
 import shutil
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal, QTimer
 from PyQt6.QtWidgets import QMessageBox
 
 try:
@@ -15,14 +15,18 @@ except ImportError:
 
 class SimpleUpdateManager(QThread):
     log_signal = pyqtSignal(str, str)
+    update_available_signal = pyqtSignal(str, str, str)  # version, notes, download_url
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent = parent
-        self.current_version = "1.0.0"  # Текущая версия приложения
+        self.current_version = "1.1.1"  # Текущая версия приложения
         self.github_repo = "Feuda1/bobrik"
         self.version_url = f"https://raw.githubusercontent.com/{self.github_repo}/main/version.json"
         self.exe_url = f"https://github.com/{self.github_repo}/releases/latest/download/bobrik.exe"
+        
+        # Подключаем сигнал к слоту в главном потоке
+        self.update_available_signal.connect(self._show_update_dialog_in_main_thread)
         
     def run(self):
         pass
@@ -59,7 +63,8 @@ class SimpleUpdateManager(QThread):
             
             if self._is_newer_version(latest_version, self.current_version):
                 self.log_signal.emit(f"🎉 Доступна новая версия: {latest_version}", "success")
-                self._show_update_dialog(latest_version, release_notes, download_url)
+                # Отправляем сигнал в главный поток
+                self.update_available_signal.emit(latest_version, release_notes, download_url)
             else:
                 self.log_signal.emit("✅ У вас установлена последняя версия", "success")
                     
@@ -85,9 +90,12 @@ class SimpleUpdateManager(QThread):
         except:
             return False
             
-    def _show_update_dialog(self, version, notes, download_url):
-        """Показывает диалог обновления"""
+    def _show_update_dialog_in_main_thread(self, version, notes, download_url):
+        """Показывает диалог обновления в главном потоке"""
         try:
+            if not self.parent:
+                return
+                
             msg = QMessageBox(self.parent)
             msg.setWindowTitle('Доступно обновление bobrik')
             
@@ -107,10 +115,13 @@ class SimpleUpdateManager(QThread):
             later_button = msg.addButton('⏰ Позже', QMessageBox.ButtonRole.NoRole)
             msg.setDefaultButton(update_button)
             
-            msg.exec()
+            # Показываем диалог синхронно в главном потоке
+            result = msg.exec()
             
             if msg.clickedButton() == update_button:
-                self._download_and_install_update(download_url, version)
+                self.log_signal.emit("📥 Начинаем загрузку обновления...", "info")
+                threading.Thread(target=self._download_and_install_update, 
+                               args=(download_url, version), daemon=True).start()
             else:
                 self.log_signal.emit("⏰ Обновление отложено", "info")
                 
@@ -120,14 +131,16 @@ class SimpleUpdateManager(QThread):
     def _download_and_install_update(self, download_url, version):
         """Скачивает и устанавливает обновление"""
         try:
-            self.log_signal.emit(f"📥 Загрузка bobrik {version}...", "info")
-            
             # Создаем временный файл
             temp_dir = tempfile.gettempdir()
             new_exe_path = os.path.join(temp_dir, f"bobrik_{version}.exe")
             
             # Скачиваем новую версию
-            response = requests.get(download_url, stream=True)
+            headers = {
+                'User-Agent': 'bobrik-updater/1.0'
+            }
+            
+            response = requests.get(download_url, stream=True, headers=headers, timeout=60)
             response.raise_for_status()
             
             total_size = int(response.headers.get('content-length', 0))
@@ -193,7 +206,18 @@ del "%~f0"
             with open(script_path, 'w', encoding='cp1251') as f:
                 f.write(script_content)
                 
-            # Показываем финальное подтверждение
+            # Используем QTimer для показа финального диалога в главном потоке
+            QTimer.singleShot(100, lambda: self._show_final_confirmation(script_path, new_exe_path))
+                
+        except Exception as e:
+            self.log_signal.emit(f"❌ Ошибка создания скрипта обновления: {str(e)}", "error")
+            
+    def _show_final_confirmation(self, script_path, new_exe_path):
+        """Показывает финальное подтверждение в главном потоке"""
+        try:
+            if not self.parent:
+                return
+                
             msg = QMessageBox(self.parent)
             msg.setWindowTitle('Готово к установке')
             msg.setText('✅ Обновление загружено!\n\n🔄 Сейчас bobrik закроется и обновится.\n\n⚡ Продолжить?')
@@ -202,7 +226,7 @@ del "%~f0"
             install_button = msg.addButton('🚀 Обновить', QMessageBox.ButtonRole.YesRole)
             cancel_button = msg.addButton('❌ Отмена', QMessageBox.ButtonRole.NoRole)
             
-            msg.exec()
+            result = msg.exec()
             
             if msg.clickedButton() == install_button:
                 self.log_signal.emit("🔄 Запуск установки обновления...", "info")
@@ -212,9 +236,9 @@ del "%~f0"
                 
                 # Закрываем приложение
                 if hasattr(self.parent, 'quit_application'):
-                    self.parent.quit_application()
+                    QTimer.singleShot(500, self.parent.quit_application)
                 else:
-                    sys.exit(0)
+                    QTimer.singleShot(500, lambda: sys.exit(0))
             else:
                 # Удаляем временные файлы
                 try:
@@ -225,7 +249,7 @@ del "%~f0"
                 self.log_signal.emit("❌ Установка отменена", "info")
                 
         except Exception as e:
-            self.log_signal.emit(f"❌ Ошибка создания скрипта обновления: {str(e)}", "error")
+            self.log_signal.emit(f"❌ Ошибка финального подтверждения: {str(e)}", "error")
             
     def set_github_repo(self, repo_path):
         """Устанавливает путь к репозиторию GitHub"""
