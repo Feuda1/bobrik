@@ -16,17 +16,19 @@ except ImportError:
 class SimpleUpdateManager(QThread):
     log_signal = pyqtSignal(str, str)
     update_available_signal = pyqtSignal(str, str, str)  # version, notes, download_url
+    show_confirmation_signal = pyqtSignal(str, str)  # script_path, new_exe_path
     
     def __init__(self, parent=None):
         super().__init__(parent)
         self.parent = parent
-        self.current_version = "1.1.3"  # Текущая версия приложения
+        self.current_version = "1.1.4"  # Текущая версия приложения
         self.github_repo = "Feuda1/bobrik"
         self.version_url = f"https://raw.githubusercontent.com/{self.github_repo}/main/version.json"
         self.exe_url = f"https://github.com/{self.github_repo}/releases/latest/download/bobrik.exe"
         
-        # Подключаем сигнал к слоту в главном потоке
+        # Подключаем сигналы к слотам в главном потоке
         self.update_available_signal.connect(self._show_update_dialog_in_main_thread)
+        self.show_confirmation_signal.connect(self._show_confirmation_dialog)
         
     def run(self):
         pass
@@ -187,45 +189,53 @@ class SimpleUpdateManager(QThread):
             # Создаем batch скрипт для Windows (без эмодзи)
             script_content = f'''@echo off
 echo Obnovlenie bobrik...
-timeout /t 2 /nobreak > nul
+timeout /t 3 /nobreak > nul
 
 echo Sozdanie rezervnoy kopii...
-if exist "{current_exe}.backup" del "{current_exe}.backup"
-ren "{current_exe}" "{os.path.basename(current_exe)}.backup"
+if exist "{current_exe}.backup" del /q "{current_exe}.backup" 2>nul
+ren "{current_exe}" "{os.path.basename(current_exe)}.backup" 2>nul
 
 echo Ustanovka novoy versii...
-copy "{new_exe_path}" "{current_exe}"
+copy /y "{new_exe_path}" "{current_exe}" 2>nul
 
-echo Zapusk obnovlennoy versii...
-start "" "{current_exe}"
+if exist "{current_exe}" (
+    echo Zapusk obnovlennoy versii...
+    start "" "{current_exe}"
+    
+    echo Ochistka vremennyh faylov...
+    timeout /t 2 /nobreak > nul
+    del /q "{new_exe_path}" 2>nul
+    
+    echo Obnovlenie zaversheno uspeshno
+) else (
+    echo Oshibka obnovleniya, vosstanovlenie rezervnoy kopii...
+    ren "{os.path.basename(current_exe)}.backup" "{os.path.basename(current_exe)}" 2>nul
+)
 
-echo Ochistka vremennyh faylov...
-timeout /t 2 /nobreak > nul
-del "{new_exe_path}"
-del "%~f0"
+del /q "%~f0" 2>nul
 '''
             
             with open(script_path, 'w', encoding='ascii', errors='ignore') as f:
                 f.write(script_content)
                 
-            self.log_signal.emit("Скрипт создан, показываем диалог подтверждения", "info")
+            self.log_signal.emit("Скрипт создан, отправляем сигнал для показа диалога", "info")
             
-            # Прямой вызов в том же потоке
-            self._show_final_confirmation_direct(script_path, new_exe_path)
+            # Используем сигнал для показа диалога в главном потоке
+            self.show_confirmation_signal.emit(script_path, new_exe_path)
                 
         except Exception as e:
             self.log_signal.emit(f"Ошибка создания скрипта обновления: {str(e)}", "error")
             
-    def _show_final_confirmation_direct(self, script_path, new_exe_path):
-        """Прямой показ диалога подтверждения"""
+    def _show_confirmation_dialog(self, script_path, new_exe_path):
+        """Показ диалога подтверждения через сигнал (выполняется в главном потоке)"""
         try:
-            self.log_signal.emit("Вызываем диалог подтверждения...", "info")
+            self.log_signal.emit("Показываем диалог подтверждения в главном потоке", "info")
             
             if not self.parent:
                 self.log_signal.emit("Родительский виджет не найден", "error")
                 return
                 
-            # Создаем диалог без эмодзи
+            # Создаем диалог в главном потоке
             msg = QMessageBox(self.parent)
             msg.setWindowTitle('Готово к установке')
             msg.setText('Обновление загружено!\n\nСейчас bobrik закроется и обновится.\n\nПродолжить?')
@@ -234,47 +244,57 @@ del "%~f0"
             install_button = msg.addButton('Обновить', QMessageBox.ButtonRole.YesRole)
             cancel_button = msg.addButton('Отмена', QMessageBox.ButtonRole.NoRole)
             
-            self.log_signal.emit("Показываем диалог...", "info")
+            self.log_signal.emit("Диалог создан, показываем пользователю", "info")
+            
+            # Показываем диалог
             result = msg.exec()
-            self.log_signal.emit("Диалог закрыт", "info")
+            
+            self.log_signal.emit("Диалог закрыт пользователем", "info")
             
             if msg.clickedButton() == install_button:
-                self.log_signal.emit("Пользователь согласился на обновление", "info")
-                self.log_signal.emit("Запуск установки обновления...", "info")
-                
-                # Запускаем скрипт обновления
-                try:
-                    self.log_signal.emit(f"Запуск скрипта: {script_path}", "info")
-                    process = subprocess.Popen([script_path], shell=True, cwd=os.path.dirname(script_path))
-                    self.log_signal.emit(f"Скрипт запущен с PID: {process.pid}", "info")
-                except Exception as e:
-                    self.log_signal.emit(f"Ошибка запуска скрипта: {str(e)}", "error")
-                    return
-                
-                # Закрываем приложение
-                self.log_signal.emit("Закрываем приложение через 2 секунды...", "info")
-                QTimer.singleShot(2000, self._close_application)
+                self.log_signal.emit("Пользователь выбрал 'Обновить'", "info")
+                self._start_update_process(script_path, new_exe_path)
             else:
-                self.log_signal.emit("Пользователь отменил обновление", "info")
-                # Удаляем временные файлы
-                try:
-                    if os.path.exists(new_exe_path):
-                        os.remove(new_exe_path)
-                        self.log_signal.emit("Временный exe удален", "info")
-                    if os.path.exists(script_path):
-                        os.remove(script_path)
-                        self.log_signal.emit("Скрипт удален", "info")
-                except Exception as e:
-                    self.log_signal.emit(f"Ошибка удаления файлов: {str(e)}", "warning")
-                self.log_signal.emit("Установка отменена", "info")
+                self.log_signal.emit("Пользователь выбрал 'Отмена'", "info")
+                self._cleanup_update_files(script_path, new_exe_path)
                 
         except Exception as e:
             self.log_signal.emit(f"Ошибка диалога подтверждения: {str(e)}", "error")
             
+    def _start_update_process(self, script_path, new_exe_path):
+        """Запускает процесс обновления"""
+        try:
+            self.log_signal.emit("Запускаем процесс обновления", "info")
+            
+            # Запускаем скрипт обновления
+            self.log_signal.emit(f"Запуск скрипта: {script_path}", "info")
+            process = subprocess.Popen([script_path], shell=True, cwd=os.path.dirname(script_path))
+            self.log_signal.emit(f"Скрипт запущен с PID: {process.pid}", "info")
+            
+            # Планируем закрытие приложения
+            self.log_signal.emit("Закрытие приложения через 3 секунды", "info")
+            QTimer.singleShot(3000, self._close_application)
+            
+        except Exception as e:
+            self.log_signal.emit(f"Ошибка запуска обновления: {str(e)}", "error")
+            
+    def _cleanup_update_files(self, script_path, new_exe_path):
+        """Очищает файлы обновления при отмене"""
+        try:
+            if os.path.exists(new_exe_path):
+                os.remove(new_exe_path)
+                self.log_signal.emit("Временный exe удален", "info")
+            if os.path.exists(script_path):
+                os.remove(script_path)
+                self.log_signal.emit("Скрипт удален", "info")
+            self.log_signal.emit("Обновление отменено", "info")
+        except Exception as e:
+            self.log_signal.emit(f"Ошибка удаления файлов: {str(e)}", "warning")
+            
     def _close_application(self):
         """Закрывает приложение"""
         try:
-            self.log_signal.emit("Закрываем приложение...", "info")
+            self.log_signal.emit("Закрываем приложение для обновления", "info")
             if hasattr(self.parent, 'quit_application'):
                 self.parent.quit_application()
             else:
