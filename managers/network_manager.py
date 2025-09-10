@@ -1,7 +1,6 @@
 import subprocess
 import sys
 import re
-import time
 from PyQt6.QtCore import QThread, pyqtSignal
 
 class NetworkManager(QThread):
@@ -11,37 +10,18 @@ class NetworkManager(QThread):
         super().__init__(parent)
         self.parent = parent
         
-        # Кеш для сетевой конфигурации
-        self._config_cache = {}
-        self._cache_timeout = 30  # 30 секунд
-        
     def run(self):
         pass
         
     def run_ipconfig(self):
         """Выполняет ipconfig и показывает только основное подключение"""
-        # Проверяем кеш
-        current_time = time.time()
-        if ('ipconfig' in self._config_cache and 
-            current_time - self._config_cache['ipconfig'].get('timestamp', 0) < self._cache_timeout):
-            cached_result = self._config_cache['ipconfig']['data']
-            self.log_signal.emit("Использован кеш IP конфигурации", "info")
-            self.log_signal.emit(cached_result, "success")
-            return
-            
         try:
             if sys.platform == "win32":
                 self.log_signal.emit("Получение IP конфигурации...", "info")
                 result = subprocess.run(['ipconfig'], capture_output=True, text=True, encoding='cp866')
                 
                 if result.returncode == 0:
-                    ip_info = self.parse_windows_ipconfig(result.stdout)
-                    if ip_info:
-                        # Кешируем результат
-                        self._config_cache['ipconfig'] = {
-                            'data': ip_info,
-                            'timestamp': current_time
-                        }
+                    self.parse_windows_ipconfig(result.stdout)
                 else:
                     self.log_signal.emit(f"Ошибка выполнения ipconfig: {result.stderr}", "error")
                     
@@ -89,12 +69,10 @@ class NetworkManager(QThread):
                     ip = ip_match.group(1)
                     if not ip.startswith('169.254'):
                         adapter_name = self.clean_adapter_name(current_adapter)
-                        result = f"{adapter_name}: {ip}"
-                        self.log_signal.emit(result, "success")
-                        return result
+                        self.log_signal.emit(f"{adapter_name}: {ip}", "success")
+                        return
                         
         self.log_signal.emit("Активное подключение не найдено", "warning")
-        return None
         
     def parse_linux_ip(self, output):
         """Парсит вывод ip route для Linux"""

@@ -3,6 +3,7 @@ from PyQt6.QtCore import QDateTime, QTimer, pyqtSignal, Qt
 from PyQt6.QtGui import QFocusEvent
 from ui.styles import HEADER_STYLE, LOGO_STYLE
 from config import LAYOUT_PARAMS, get_is_small_screen
+from simple_startup import autostart_is_enabled, autostart_enable, autostart_disable
 
 class HeaderWidget(QFrame):
     search_text_changed = pyqtSignal(str)
@@ -11,6 +12,7 @@ class HeaderWidget(QFrame):
     search_position_requested = pyqtSignal(int, int)
     exit_requested = pyqtSignal()
     check_updates_requested = pyqtSignal()
+    autostart_toggled = pyqtSignal(bool)
     
     def __init__(self):
         super().__init__()
@@ -116,6 +118,16 @@ class HeaderWidget(QFrame):
                 background-color: #059669;
             }}
         """)
+
+        # Autostart toggle
+        self.autostart_button = QPushButton("A")
+        self.autostart_button.setFixedSize(button_size, button_size)
+        self.autostart_button.setToolTip("Автозапуск: вкл/выкл")
+        self.autostart_button.clicked.connect(self.toggle_autostart)
+        try:
+            self.set_autostart_style(autostart_is_enabled())
+        except Exception:
+            self.set_autostart_style(False)
         
         # Кнопка выхода
         self.exit_button = QPushButton("✕")
@@ -165,6 +177,7 @@ class HeaderWidget(QFrame):
             
         layout.addWidget(self.time_label)
         layout.addWidget(self.update_button)
+        layout.addWidget(self.autostart_button)
         layout.addWidget(self.exit_button)
         
     def on_search_text_changed(self, text):
@@ -200,6 +213,65 @@ class HeaderWidget(QFrame):
             current_time = QDateTime.currentDateTime().toString("dd.MM.yyyy HH:mm:ss")
         self.time_label.setText(current_time)
 
+    # === Автозапуск ===
+    def set_autostart_style(self, enabled: bool):
+        button_font_size = 12 if self.is_small_screen else 14
+        if enabled:
+            style = f"""
+                QPushButton {{
+                    background-color: #065f46;
+                    border: 1px solid #10b981;
+                    border-radius: 6px;
+                    color: #10b981;
+                    font-size: {button_font_size}px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background-color: #047857;
+                    border-color: #34d399;
+                    color: #ffffff;
+                }}
+                QPushButton:pressed {{
+                    background-color: #064e3b;
+                }}
+            """
+        else:
+            style = f"""
+                QPushButton {{
+                    background-color: #7f1d1d;
+                    border: 1px solid #ef4444;
+                    border-radius: 6px;
+                    color: #ef4444;
+                    font-size: {button_font_size}px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background-color: #991b1b;
+                    border-color: #f87171;
+                    color: #ffffff;
+                }}
+                QPushButton:pressed {{
+                    background-color: #7f1d1d;
+                }}
+            """
+        self.autostart_button.setStyleSheet(style)
+
+    def toggle_autostart(self):
+        try:
+            current = autostart_is_enabled()
+            if current:
+                ok = autostart_disable()
+                if ok:
+                    self.set_autostart_style(False)
+                    self.autostart_toggled.emit(False)
+            else:
+                ok = autostart_enable()
+                if ok:
+                    self.set_autostart_style(True)
+                    self.autostart_toggled.emit(True)
+        except Exception:
+            pass
+
 class SearchLineEdit(QLineEdit):
     focus_gained = pyqtSignal()
     focus_lost = pyqtSignal()
@@ -211,3 +283,62 @@ class SearchLineEdit(QLineEdit):
     def focusOutEvent(self, event: QFocusEvent):
         super().focusOutEvent(event)
         self.focus_lost.emit()
+
+    # === Автозапуск ===
+    def set_autostart_style(self, enabled: bool):
+        button_font_size = 12 if self.is_small_screen else 14
+        if enabled:
+            style = f"""
+                QPushButton {{
+                    background-color: #065f46;
+                    border: 1px solid #10b981;
+                    border-radius: 6px;
+                    color: #10b981;
+                    font-size: {button_font_size}px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background-color: #047857;
+                    border-color: #34d399;
+                    color: #ffffff;
+                }}
+                QPushButton:pressed {{
+                    background-color: #064e3b;
+                }}
+            """
+        else:
+            style = f"""
+                QPushButton {{
+                    background-color: #7f1d1d;
+                    border: 1px solid #ef4444;
+                    border-radius: 6px;
+                    color: #ef4444;
+                    font-size: {button_font_size}px;
+                    font-weight: bold;
+                }}
+                QPushButton:hover {{
+                    background-color: #991b1b;
+                    border-color: #f87171;
+                    color: #ffffff;
+                }}
+                QPushButton:pressed {{
+                    background-color: #7f1d1d;
+                }}
+            """
+        self.autostart_button.setStyleSheet(style)
+
+    def toggle_autostart(self):
+        try:
+            current = autostart_is_enabled()
+            if current:
+                ok = autostart_disable()
+                if ok:
+                    self.set_autostart_style(False)
+                    self.autostart_toggled.emit(False)
+            else:
+                ok = autostart_enable()
+                if ok:
+                    self.set_autostart_style(True)
+                    self.autostart_toggled.emit(True)
+        except Exception:
+            pass

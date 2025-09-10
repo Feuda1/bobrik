@@ -57,6 +57,7 @@ class CleanupManager(QThread):
                         
             self._clean_recycle_bin()
             self._clean_browser_cache()
+            self._clean_thumbnails_cache()
             self._run_disk_cleanup()
             
             size_mb = total_size / (1024 * 1024)
@@ -134,6 +135,29 @@ class CleanupManager(QThread):
         except Exception:
             pass
             
+    
+    def _clean_thumbnails_cache(self):
+        """Безопасная очистка кэша миниатюр пользователя."""
+        try:
+            if sys.platform != "win32":
+                return
+            thumbs_dir = os.path.join(os.getenv('LOCALAPPDATA') or '', 'Microsoft', 'Windows', 'Explorer')
+            if thumbs_dir and os.path.isdir(thumbs_dir):
+                deleted = 0
+                for name in os.listdir(thumbs_dir):
+                    n = name.lower()
+                    if n.startswith('thumbcache_') and n.endswith('.db'):
+                        path = os.path.join(thumbs_dir, name)
+                        try:
+                            os.remove(path)
+                            deleted += 1
+                        except Exception:
+                            continue
+                if deleted:
+                    self.log_signal.emit(f"Удалено файлов кеша миниатюр: {deleted}", "info")
+        except Exception:
+            pass
+
     def _run_disk_cleanup(self):
         """Запускает встроенную очистку диска Windows"""
         try:
@@ -260,8 +284,11 @@ class CleanupManager(QThread):
             
             if not os.path.exists(startup_path):
                 os.makedirs(startup_path, exist_ok=True)
-                
-            subprocess.Popen(['explorer', startup_path])
+
+            try:
+                os.startfile(startup_path)  # type: ignore[attr-defined]
+            except Exception:
+                subprocess.Popen(['explorer', startup_path])
             self.log_signal.emit("Открыта папка автозагрузки", "success")
             
         except Exception as e:

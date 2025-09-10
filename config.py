@@ -4,22 +4,13 @@ from PyQt6.QtCore import QRect
 
 WINDOW_TITLE = ""
 
-# Кеш для оптимизации повторных вызовов
-_screen_cache = {}
-
 # Функция для определения размера экрана и адаптивных размеров
 def get_adaptive_window_size():
     """Определяет оптимальный размер окна на основе разрешения экрана"""
-    # Проверяем кеш
-    if 'window_size' in _screen_cache:
-        return _screen_cache['window_size']
-        
     app = QApplication.instance()
     if app is None:
         # Если приложение еще не создано, используем значения по умолчанию
-        size = (1200, 700)
-        _screen_cache['window_size'] = size
-        return size
+        return 1200, 700
     
     # Получаем размер основного экрана
     screen = app.primaryScreen()
@@ -41,26 +32,17 @@ def get_adaptive_window_size():
         window_width = min(1200, screen_width - 200)
         window_height = min(700, screen_height - 150)
     
-    size = (window_width, window_height)
-    _screen_cache['window_size'] = size
-    return size
+    return window_width, window_height
 
 def get_is_small_screen():
     """Проверяет, является ли экран маленьким"""
-    # Проверяем кеш
-    if 'is_small_screen' in _screen_cache:
-        return _screen_cache['is_small_screen']
-        
     app = QApplication.instance()
     if app is None:
-        _screen_cache['is_small_screen'] = False
         return False
     
     screen = app.primaryScreen()
     screen_geometry = screen.availableGeometry()
-    is_small = screen_geometry.width() <= 1024 or screen_geometry.height() <= 768
-    _screen_cache['is_small_screen'] = is_small
-    return is_small
+    return screen_geometry.width() <= 1024 or screen_geometry.height() <= 768
 
 # Адаптивные размеры
 WINDOW_WIDTH, WINDOW_HEIGHT = get_adaptive_window_size()
@@ -86,42 +68,31 @@ COLORS = {
 
 def get_adaptive_fonts():
     """Возвращает адаптивные размеры шрифтов"""
-    # Проверяем кеш
-    if 'fonts' in _screen_cache:
-        return _screen_cache['fonts']
-        
     is_small = get_is_small_screen()
     
     if is_small:
-        fonts = {
+        return {
             "logo": {"size": 20, "weight": 600},
             "title": {"size": 16, "weight": 500},
             "button": {"size": 14, "weight": 500},
             "console": {"size": 11, "family": "'Consolas', 'Monaco', monospace"}
         }
     else:
-        fonts = {
+        return {
             "logo": {"size": 24, "weight": 600},
             "title": {"size": 18, "weight": 500},
             "button": {"size": 16, "weight": 500},
             "console": {"size": 13, "family": "'Consolas', 'Monaco', monospace"}
         }
-    
-    _screen_cache['fonts'] = fonts
-    return fonts
 
 FONTS = get_adaptive_fonts()
 
 def get_adaptive_layout_params():
     """Возвращает адаптивные параметры интерфейса"""
-    # Проверяем кеш
-    if 'layout_params' in _screen_cache:
-        return _screen_cache['layout_params']
-        
     is_small = get_is_small_screen()
     
     if is_small:
-        params = {
+        return {
             "header_height": 60,
             "tabs_width": 100,
             "button_width": 90,
@@ -132,7 +103,7 @@ def get_adaptive_layout_params():
             "console_min_height": 200
         }
     else:
-        params = {
+        return {
             "header_height": 70,
             "tabs_width": 120,
             "button_width": 105,
@@ -142,9 +113,6 @@ def get_adaptive_layout_params():
             "content_spacing": 15,
             "console_min_height": 250
         }
-    
-    _screen_cache['layout_params'] = params
-    return params
 
 LAYOUT_PARAMS = get_adaptive_layout_params()
 

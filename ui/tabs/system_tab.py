@@ -8,6 +8,7 @@ from managers.cleanup_manager import CleanupManager
 from managers.iiko_manager import IikoManager
 from managers.rndis_manager import RndisManager
 from config import LAYOUT_PARAMS, get_is_small_screen
+from simple_startup import autostart_is_enabled, autostart_enable, autostart_disable
 
 class SystemTab(QWidget):
     log_signal = pyqtSignal(str, str)
@@ -16,37 +17,31 @@ class SystemTab(QWidget):
         super().__init__()
         self.is_small_screen = get_is_small_screen()
         
-        # Ленивая инициализация менеджеров
-        self._managers = {}
-        
-        # Только touchscreen_manager нужен сразу для отображения статуса
         self.touchscreen_manager = TouchscreenManager()
         self.touchscreen_manager.log_signal.connect(self.log_signal.emit)
         self.touchscreen_manager.status_signal.connect(self.update_touchscreen_button)
         self.touchscreen_manager.start()
         
-        self.init_ui()
+        self.reboot_manager = RebootManager(self)
+        self.reboot_manager.log_signal.connect(self.log_signal.emit)
         
-    def get_manager(self, manager_name):
-        """Ленивая загрузка менеджеров"""
-        if manager_name not in self._managers:
-            if manager_name == 'reboot':
-                self._managers[manager_name] = RebootManager(self)
-            elif manager_name == 'device':
-                self._managers[manager_name] = DeviceManager(self)
-            elif manager_name == 'network':
-                self._managers[manager_name] = NetworkManager(self)
-            elif manager_name == 'cleanup':
-                self._managers[manager_name] = CleanupManager(self)
-            elif manager_name == 'iiko':
-                self._managers[manager_name] = IikoManager(self)
-            elif manager_name == 'rndis':
-                self._managers[manager_name] = RndisManager(self)
-                
-            if manager_name in self._managers:
-                self._managers[manager_name].log_signal.connect(self.log_signal.emit)
-                
-        return self._managers.get(manager_name)
+        self.device_manager = DeviceManager(self)
+        self.device_manager.log_signal.connect(self.log_signal.emit)
+        
+        self.network_manager = NetworkManager(self)
+        self.network_manager.log_signal.connect(self.log_signal.emit)
+        
+        self.cleanup_manager = CleanupManager(self)
+        self.cleanup_manager.log_signal.connect(self.log_signal.emit)
+        
+        self.iiko_manager = IikoManager(self)
+        self.iiko_manager.log_signal.connect(self.log_signal.emit)
+
+        # RNDIS/Internet sharing manager
+        self.rndis_manager = RndisManager(self)
+        self.rndis_manager.log_signal.connect(self.log_signal.emit)
+        
+        self.init_ui()
         
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -92,14 +87,15 @@ class SystemTab(QWidget):
             ("Очистка\nTemp файлов", self.clean_temp_files, False),
             ("Перезапуск\nCOM портов", self.restart_com_ports, False),
             ("Управление\nслужбами", self.open_services, False),
-            ("Отключить\nзащиту", self.disable_security, False),
+            ("Отключить\nзащиту", self.disable_security, True),
             ("Папка\nавтозагрузки", self.open_startup, False),
             ("Панель\nуправления", self.open_control_panel, False),
             ("Перезапуск\nдисп. печати", self.restart_print_spooler, False),
             ("Очистка\nочереди печати", self.clear_print_queue, False),
             ("Настройка\nTLS 1.2", self.configure_tls, False),
-            ("Перезапуск\nRNDIS", self.toggle_internet_sharing, False)
-        ]
+            # RNDIS удалён
+]
+        # Кнопка автозапуска перенесена в хедер
         
         self.button_widgets = {}
         
@@ -107,11 +103,29 @@ class SystemTab(QWidget):
             row = i // buttons_per_row
             col = i % buttons_per_row
             
-            button = self.create_button(text, False, is_toggle=is_toggle)
+            is_active = False
+            # Initialize state for Autostart toggle by handler identity
+            if is_toggle and handler == self.toggle_autostart:
+                try:
+                    is_active = autostart_is_enabled()
+                except Exception:
+                    is_active = False
+            if is_toggle and ("Автозапуск" in text):
+                try:
+                    is_active = autostart_is_enabled()
+                except Exception:
+                    is_active = False
+            try:
+                from managers.cleanup_manager import CleanupManager  # type: ignore
+                if is_toggle and handler == self.disable_security:
+                    is_active = self.cleanup_manager.is_security_enabled()
+            except Exception:
+                pass
+            button = self.create_button(text, is_active, is_toggle=is_toggle)
             button.clicked.connect(handler)
             
             # Специальные стили для некоторых кнопок
-            if "Ребут\nсенсорного" in text or "Перезапуск\nRNDIS" in text:
+            if "Ребут\nсенсорного" in text or "Перезапуск\n" in text:
                 button.setStyleSheet(self.get_special_button_style())
             
             grid.addWidget(button, row, col)
@@ -243,60 +257,104 @@ class SystemTab(QWidget):
         self.touchscreen_manager.reboot_touchscreen()
         
     def request_reboot(self):
-        manager = self.get_manager('reboot')
-        if manager:
-            manager.request_reboot()
+        self.reboot_manager.request_reboot()
         
     def open_services(self):
-        manager = self.get_manager('device')
-        if manager:
-            manager.open_services()
+        self.device_manager.open_services()
         
     def clean_temp_files(self):
-        manager = self.get_manager('cleanup')
-        if manager:
-            manager.clean_temp_files()
+        self.cleanup_manager.clean_temp_files()
         
     def restart_com_ports(self):
-        manager = self.get_manager('iiko')
-        if manager:
-            manager.restart_com_ports()
+        self.iiko_manager.restart_com_ports()
         
     def disable_security(self):
-        manager = self.get_manager('cleanup')
-        if manager:
-            manager.disable_windows_defender()
+        # Тумблер защиты (Defender+Firewall)
+        try:
+            btn = None
+            try:
+                btn = self.sender()
+            except Exception:
+                btn = None
+            self.cleanup_manager.toggle_security()
+            active = False
+            try:
+                active = self.cleanup_manager.is_security_enabled()
+            except Exception:
+                active = False
+            if btn is not None:
+                self.update_button_style(btn, active, True, is_toggle=True)
+        except Exception:
+            pass
+        self.cleanup_manager.configure_tls()
         
     def open_startup(self):
-        manager = self.get_manager('cleanup')
-        if manager:
-            manager.open_startup_folder()
-        
-    def open_control_panel(self):
-        manager = self.get_manager('cleanup')
-        if manager:
-            manager.open_control_panel()
-        
-    def restart_print_spooler(self):
-        manager = self.get_manager('cleanup')
-        if manager:
-            manager.restart_print_spooler()
-        
-    def clear_print_queue(self):
-        manager = self.get_manager('cleanup')
-        if manager:
-            manager.clear_print_queue()
-        
-    def configure_tls(self):
-        manager = self.get_manager('cleanup')
-        if manager:
-            manager.configure_tls()
-        
+        # Открыть папку автозагрузки пользователя
+        try:
+            self.cleanup_manager.open_startup_folder()
+        except Exception:
+            pass
+
     def toggle_internet_sharing(self):
-        manager = self.get_manager('rndis')
-        if manager:
-            manager.toggle_internet_sharing()
+        # Use RNDIS manager to toggle internet sharing
+        self.rndis_manager.toggle_internet_sharing()
+
+    def open_control_panel(self):
+        # Delegate to cleanup manager implementation
+        try:
+            self.cleanup_manager.open_control_panel()
+        except Exception:
+            pass
+
+    def restart_print_spooler(self):
+        # Delegate to cleanup manager implementation
+        try:
+            self.cleanup_manager.restart_print_spooler()
+        except Exception:
+            pass
+
+    def clear_print_queue(self):
+        # Delegate to cleanup manager implementation
+        try:
+            self.cleanup_manager.clear_print_queue()
+        except Exception:
+            pass
+
+    def configure_tls(self):
+        # Delegate to cleanup manager implementation
+        try:
+            self.cleanup_manager.configure_tls()
+        except Exception:
+            pass
         
+    def toggle_autostart(self):
+        try:
+            btn = None
+            try:
+                btn = self.sender()
+            except Exception:
+                btn = None
+            current = autostart_is_enabled()
+            if current:
+                ok = autostart_disable()
+                if ok:
+                    if btn is not None:
+                        self.update_button_style(btn, False, True, is_toggle=True)
+                    self.log_signal.emit("Автозапуск: выключен", "info")
+                else:
+                    self.log_signal.emit("Автозапуск: не удалось выключить", "error")
+            else:
+                ok = autostart_enable()
+                if ok:
+                    if btn is not None:
+                        self.update_button_style(btn, True, True, is_toggle=True)
+                    self.log_signal.emit("Автозапуск: включен", "success")
+                else:
+                    self.log_signal.emit("Автозапуск: не удалось включить", "error")
+        except Exception as e:
+            self.log_signal.emit(f"Ошибка автозапуска: {e}", "error")
+
     def cleanup(self):
         if self.touchscreen_manager.is_disabled:
             self.touchscreen_manager.enable_touchscreen()
+

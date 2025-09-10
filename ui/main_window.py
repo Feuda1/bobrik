@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+﻿from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QScrollArea, QStackedWidget, QPushButton, QButtonGroup,
                              QSystemTrayIcon, QMenu, QMessageBox, QApplication, QSplitter)
 from PyQt6.QtCore import Qt, QTimer, QSize
@@ -7,71 +7,32 @@ from ui.styles import MAIN_WINDOW_STYLE
 from ui.widgets.header import HeaderWidget
 from ui.widgets.console_panel import ConsolePanel
 from ui.widgets.dropdown_search import DropdownSearchWidget
-# Ленивый импорт вкладок для ускорения загрузки
-def get_system_tab():
-    from ui.tabs.system_tab import SystemTab
-    return SystemTab()
-
-def get_iiko_tab():
-    from ui.tabs.iiko_tab import IikoTab
-    return IikoTab()
-
-def get_logs_tab():
-    from ui.tabs.logs_tab import LogsTab
-    return LogsTab()
-
-def get_folders_tab():
-    from ui.tabs.folders_tab import FoldersTab
-    return FoldersTab()
-
-def get_network_tab():
-    from ui.tabs.network_tab import NetworkTab
-    return NetworkTab()
-from ui.widgets.touch_auth_dialog import TouchAuthDialog
+from ui.tabs.system_tab import SystemTab
+from ui.tabs.iiko_tab import IikoTab
+from ui.tabs.logs_tab import LogsTab
+from ui.tabs.folders_tab import FoldersTab
+from ui.tabs.network_tab import NetworkTab
 from managers.update_manager import SimpleUpdateManager
 from config import WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, LAYOUT_PARAMS, get_is_small_screen
 
-def get_installer_tab():
-    try:
-        from ui.tabs.installer_tab import InstallerTab
-        return InstallerTab()
-    except ImportError:
-        return None
+try:
+    from ui.tabs.installer_tab import InstallerTab
+    INSTALLER_AVAILABLE = True
+except ImportError:
+    INSTALLER_AVAILABLE = False
 
-def get_plugins_tab():
-    try:
-        from ui.tabs.plugins_tab import PluginsTab
-        return PluginsTab()
-    except ImportError:
-        return None
-
-# Проверяем доступность модулей без их загрузки
-def check_installer_available():
-    try:
-        import ui.tabs.installer_tab
-        return True
-    except ImportError:
-        return False
-
-def check_plugins_available():
-    try:
-        import ui.tabs.plugins_tab
-        return True
-    except ImportError:
-        return False
-
-INSTALLER_AVAILABLE = check_installer_available()
-PLUGINS_AVAILABLE = check_plugins_available()
+try:
+    from ui.tabs.plugins_tab import PluginsTab
+    PLUGINS_AVAILABLE = True
+except ImportError:
+    PLUGINS_AVAILABLE = False
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.tray_icon = None
-        self.is_authenticated = False
+        self.is_authenticated = True
         self.is_small_screen = get_is_small_screen()
-        
-        # Кеш для стилей
-        self._style_cache = {}
         
         self.idle_timer = QTimer()
         self.idle_timer.setSingleShot(True)
@@ -197,8 +158,6 @@ class MainWindow(QMainWindow):
         self.tab_buttons.idClicked.connect(self.switch_tab)
         
         if self.tab_buttons.buttons():
-            # Загружаем первую вкладку по умолчанию
-            self.load_tab(0)
             self.tab_buttons.buttons()[0].setChecked(True)
             self.stacked_widget.setCurrentIndex(0)
             
@@ -245,27 +204,24 @@ class MainWindow(QMainWindow):
         parent_layout.addLayout(tabs_layout, 2)
         
     def create_tabs(self, layout):
-        # Используем ленивую загрузку - создаем вкладки только при первом доступе
-        self.tab_factories = [
-            ("Система", get_system_tab),
-            ("iiko", get_iiko_tab),
-            ("Логи", get_logs_tab),
-            ("Папки", get_folders_tab),
-            ("Сеть", get_network_tab),
+        tabs_data = [
+            ("Система", SystemTab()),
+            ("iiko", IikoTab()),
+            ("Логи", LogsTab()),
+            ("Папки", FoldersTab()),
+            ("Сеть", NetworkTab()),
         ]
         
         if INSTALLER_AVAILABLE:
-            self.tab_factories.append(("Программы", get_installer_tab))
+            tabs_data.append(("Программы", InstallerTab()))
             
         if PLUGINS_AVAILABLE:
-            self.tab_factories.append(("Плагины", get_plugins_tab))
-        
-        self.loaded_tabs = {}  # Кеш для загруженных вкладок
+            tabs_data.append(("Плагины", PluginsTab()))
         
         # Адаптивная высота кнопок вкладок
         button_height = 25 if self.is_small_screen else 30
         
-        for i, (name, factory) in enumerate(self.tab_factories):
+        for i, (name, widget) in enumerate(tabs_data):
             button = QPushButton(name)
             button.setCheckable(True)
             button.setFixedHeight(button_height)
@@ -276,10 +232,12 @@ class MainWindow(QMainWindow):
             
             self.tab_buttons.addButton(button, i)
             layout.addWidget(button)
+            self.stacked_widget.addWidget(widget)
             
-            # Добавляем пустой виджет как заглушку
-            placeholder = QWidget()
-            self.stacked_widget.addWidget(placeholder)
+            if hasattr(widget, 'log_signal'):
+                widget.log_signal.connect(self.add_log)
+            
+            self.connect_widget_activity(widget)
     
     def connect_widget_activity(self, widget):
         widget.mousePressEvent = self.wrap_event(widget.mousePressEvent)
@@ -297,112 +255,72 @@ class MainWindow(QMainWindow):
         return wrapped_event
         
     def switch_tab(self, tab_id):
-        # Ленивая загрузка вкладки при первом переключении
-        if tab_id not in self.loaded_tabs:
-            self.load_tab(tab_id)
-        
         self.stacked_widget.setCurrentIndex(tab_id)
         self.reset_idle_timer()
         
-    def load_tab(self, tab_id):
-        """Загружает вкладку по требованию"""
-        if tab_id >= len(self.tab_factories):
-            return
-            
-        name, factory = self.tab_factories[tab_id]
-        
-        try:
-            widget = factory()
-            if widget is None:
-                return
-                
-            # Заменяем заглушку на реальный виджет
-            old_widget = self.stacked_widget.widget(tab_id)
-            self.stacked_widget.removeWidget(old_widget)
-            old_widget.deleteLater()
-            
-            self.stacked_widget.insertWidget(tab_id, widget)
-            self.loaded_tabs[tab_id] = widget
-            
-            # Подключаем сигналы
-            if hasattr(widget, 'log_signal'):
-                widget.log_signal.connect(self.add_log)
-            
-            self.connect_widget_activity(widget)
-            
-        except Exception as e:
-            print(f"Ошибка загрузки вкладки {name}: {e}")
-        
     def get_scroll_style(self):
-        if 'scroll_style' not in self._style_cache:
-            self._style_cache['scroll_style'] = """
-                QScrollArea {
-                    background-color: #141414;
-                    border: 1px solid #1f1f1f;
-                    border-radius: 8px;
-                }
-                QScrollBar:vertical {
-                    background-color: #1a1a1a;
-                    width: 8px;
-                    border-radius: 4px;
-                }
-                QScrollBar::handle:vertical {
-                    background-color: #404040;
-                    border-radius: 4px;
-                    min-height: 20px;
-                }
-                QScrollBar::handle:vertical:hover {
-                    background-color: #505050;
-                }
-                QScrollBar::add-line:vertical,
-                QScrollBar::sub-line:vertical {
-                    border: none;
-                    background: none;
-                }
-            """
-        return self._style_cache['scroll_style']
+        return """
+            QScrollArea {
+                background-color: #141414;
+                border: 1px solid #1f1f1f;
+                border-radius: 8px;
+            }
+            QScrollBar:vertical {
+                background-color: #1a1a1a;
+                width: 8px;
+                border-radius: 4px;
+            }
+            QScrollBar::handle:vertical {
+                background-color: #404040;
+                border-radius: 4px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background-color: #505050;
+            }
+            QScrollBar::add-line:vertical,
+            QScrollBar::sub-line:vertical {
+                border: none;
+                background: none;
+            }
+        """
         
     def get_content_style(self):
-        if 'content_style' not in self._style_cache:
-            self._style_cache['content_style'] = """
-                QStackedWidget {
-                    background-color: #141414;
-                    border: 1px solid #1f1f1f;
-                    border-radius: 8px;
-                }
-            """
-        return self._style_cache['content_style']
+        return """
+            QStackedWidget {
+                background-color: #141414;
+                border: 1px solid #1f1f1f;
+                border-radius: 8px;
+            }
+        """
         
     def get_tab_button_style(self):
-        style_key = f'tab_button_style_{self.is_small_screen}'
-        if style_key not in self._style_cache:
-            font_size = 11 if self.is_small_screen else 12
-            self._style_cache[style_key] = f"""
-                QPushButton {{
-                    background-color: #1a1a1a;
-                    color: #808080;
-                    border: 1px solid #2a2a2a;
-                    border-radius: 4px;
-                    padding: 6px 10px;
-                    text-align: left;
-                    font-size: {font_size}px;
-                    font-weight: 500;
-                }}
-                QPushButton:hover {{
-                    background-color: #222222;
-                    color: #e0e0e0;
-                    border-color: #3a3a3a;
-                }}
-                QPushButton:checked {{
-                    background-color: #2a2a2a;
-                    color: #ffffff;
-                    border-color: #4a4a4a;
-                }}
-                QPushButton:pressed {{
-                    background-color: #1a1a1a;
-                }}
-            """
-        return self._style_cache[style_key]
+        font_size = 11 if self.is_small_screen else 12
+        return f"""
+            QPushButton {{
+                background-color: #1a1a1a;
+                color: #808080;
+                border: 1px solid #2a2a2a;
+                border-radius: 4px;
+                padding: 6px 10px;
+                text-align: left;
+                font-size: {font_size}px;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background-color: #222222;
+                color: #e0e0e0;
+                border-color: #3a3a3a;
+            }}
+            QPushButton:checked {{
+                background-color: #2a2a2a;
+                color: #ffffff;
+                border-color: #4a4a4a;
+            }}
+            QPushButton:pressed {{
+                background-color: #1a1a1a;
+            }}
+        """
         
     def resizeEvent(self, event):
         """Обработка изменения размера окна"""
@@ -422,14 +340,13 @@ class MainWindow(QMainWindow):
         self.console_panel.add_log(message, log_type)
         
     def reset_idle_timer(self):
-        if self.is_authenticated and self.isVisible():
+        if self.isVisible():
             self.idle_timer.stop()
             self.idle_timer.start(self.idle_timeout)
     
     def auto_lock(self):
-        if self.is_authenticated and self.isVisible():
-            self.console_panel.add_log("🔒 Автоблокировка: бездействие более 10 минут", "warning")
-            self.is_authenticated = False
+        if self.isVisible():
+            self.console_panel.add_log("Auto lock: hidden to tray after 10 minutes idle", "warning")
             self.hide_to_tray()
             
     def mousePressEvent(self, event):
@@ -465,33 +382,11 @@ class MainWindow(QMainWindow):
             self.show_window()
     
     def show_window(self):
-        if not self.is_authenticated:
-            self.show_pin_dialog()
-        else:
-            self.show()
-            self.raise_()
-            self.activateWindow()
-            self.reset_idle_timer()
-    
-    def show_pin_dialog(self):
-        auth_dialog = TouchAuthDialog(self)
-        auth_dialog.auth_accepted.connect(self.on_pin_accepted)
-        
-        if auth_dialog.exec() == auth_dialog.DialogCode.Accepted:
-            pass
-        else:
-            pass
-    
-    def on_pin_accepted(self):
-        self.is_authenticated = True
-        self.console_panel.add_log("Авторизация успешна", "success")
-        
         self.show()
         self.raise_()
         self.activateWindow()
         self.reset_idle_timer()
-    
-    def hide_to_tray(self):
+    def  hide_to_tray(self):
         self.idle_timer.stop()
         self.dropdown_search.hide_dropdown()
         self.hide()
@@ -528,9 +423,9 @@ class MainWindow(QMainWindow):
         self.search_shortcut.activated.connect(self.focus_header_search)
         
     def focus_header_search(self):
-        if self.is_authenticated:
-            self.header.focus_search()
-            self.console_panel.add_log("🔍 Поиск активирован (Ctrl+K)", "info")
+        self.header.focus_search()
+        self.console_panel.add_log("Focus search (Ctrl+K)", "info")
+
     
     def check_updates(self):
         self.update_manager.check_for_updates()
@@ -602,7 +497,7 @@ class MainWindow(QMainWindow):
             self.dropdown_search.hide_dropdown()
     
     def position_dropdown_search(self, x, y):
-        if self.is_authenticated and self.header.get_search_text().strip():
+        if self.header.get_search_text().strip():
             self.dropdown_search.show_dropdown(x, y)
     
     def on_search_closed(self):
@@ -619,7 +514,7 @@ class MainWindow(QMainWindow):
             
             tab_names = ["Система", "iiko", "Логи", "Папки", "Сеть", "Программы", "Плагины"]
             tab_name = tab_names[tab_index] if tab_index < len(tab_names) else "Неизвестно"
-            self.console_panel.add_log(f"📍 Переход: {tab_name}", "info")
+            self.console_panel.add_log(f"?? Переход: {tab_name}", "info")
             
             if search_item and hasattr(search_item, 'button_text') and search_item.button_text:
                 self.highlight_button_in_tab(tab_index, search_item.button_text)
@@ -642,7 +537,7 @@ class MainWindow(QMainWindow):
                 if button.text() == button_text:
                     self.apply_highlight_style(button)
                     QTimer.singleShot(3000, lambda: self.remove_highlight_style(button))
-                    self.console_panel.add_log(f"🔍 Найдено: {button_text}", "info")
+                    self.console_panel.add_log(f"?? Найдено: {button_text}", "info")
                     break
                     
         except Exception as e:

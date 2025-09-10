@@ -1,6 +1,12 @@
 import os
 import sys
 import subprocess
+from typing import Optional
+
+try:
+    import winreg  # type: ignore
+except Exception:
+    winreg = None
 
 def is_first_run():
     """Проверяет, первый ли это запуск"""
@@ -93,3 +99,55 @@ def setup_startup_if_first_run():
 # Для тестирования
 if __name__ == "__main__":
     setup_startup_if_first_run()
+
+# New autostart API (used by UI)
+
+def autostart_is_enabled() -> bool:
+    try:
+        import winreg  # type: ignore
+        key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ) as key:
+            try:
+                winreg.QueryValueEx(key, 'bobrik')
+                return True
+            except FileNotFoundError:
+                return False
+    except Exception:
+        return False
+
+
+def autostart_enable() -> bool:
+    try:
+        import winreg  # type: ignore
+        key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+        if getattr(sys, 'frozen', False):
+            target = sys.executable
+        else:
+            script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'main.py'))
+            target = '"' + sys.executable + '" ' + '"' + script_path + '"'
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, 'bobrik', 0, winreg.REG_SZ, target)
+        return True
+    except FileNotFoundError:
+        try:
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:  # type: ignore[name-defined]
+                winreg.SetValueEx(key, 'bobrik', 0, winreg.REG_SZ, target)
+            return True
+        except Exception:
+            return False
+    except Exception:
+        return False
+
+
+def autostart_disable() -> bool:
+    try:
+        import winreg  # type: ignore
+        key_path = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
+            try:
+                winreg.DeleteValue(key, 'bobrik')
+                return True
+            except FileNotFoundError:
+                return True
+    except Exception:
+        return False

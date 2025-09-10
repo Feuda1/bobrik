@@ -4,14 +4,49 @@ import os
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QPalette, QColor
 from PyQt6.QtCore import Qt
-# Ленивый импорт для ускорения запуска
-def get_main_window():
-    from ui.main_window import MainWindow
-    return MainWindow
+from ui.main_window import MainWindow
 
-def get_startup_setup():
-    from simple_startup import setup_startup_if_first_run
-    return setup_startup_if_first_run
+def _hide_console_window_windows():
+    if sys.platform != "win32":
+        return
+    try:
+        hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+        if hwnd:
+            ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE
+    except Exception:
+        pass
+
+def _patch_subprocess_no_console_windows():
+    if sys.platform != "win32":
+        return
+    try:
+        import subprocess as _sp
+        if getattr(_sp, "_bobrik_no_console_patched", False):
+            return
+
+        CREATE_NO_WINDOW = getattr(_sp, "CREATE_NO_WINDOW", 0x08000000)
+        STARTF_USESHOWWINDOW = 0x00000001
+        SW_HIDE = 0
+
+        _orig_popen = _sp.Popen
+
+        def _popen_no_window(*args, **kwargs):
+            flags = kwargs.get("creationflags", 0) | CREATE_NO_WINDOW
+            kwargs["creationflags"] = flags
+
+            si = kwargs.get("startupinfo")
+            if si is None:
+                si = _sp.STARTUPINFO()
+            si.dwFlags |= STARTF_USESHOWWINDOW
+            si.wShowWindow = SW_HIDE
+            kwargs["startupinfo"] = si
+
+            return _orig_popen(*args, **kwargs)
+
+        _sp.Popen = _popen_no_window
+        _sp._bobrik_no_console_patched = True
+    except Exception:
+        pass
 
 def is_admin():
     try:
@@ -44,21 +79,11 @@ def run_as_admin():
         return False
 
 def main():
-    if not is_admin():
-        print("Программа требует права администратора для полной функциональности.")
-        print("Перезапуск с правами администратора...")
-        
-        if run_as_admin():
-            sys.exit(0)
-        else:
-            print("Не удалось получить права администратора.")
-            print("Программа будет запущена с ограниченной функциональностью.")
-    else:
-        print("Программа запущена с правами администратора.")
-    
+    # Скрыть окно консоли и запретить появление консоли у дочерних процессов
+    _hide_console_window_windows()
+    _patch_subprocess_no_console_windows()
+
     # Настраиваем автозагрузку при первом запуске
-    startup_setup = get_startup_setup()
-    startup_setup()
     
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
@@ -68,7 +93,6 @@ def main():
     palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
     app.setPalette(palette)
     
-    MainWindow = get_main_window()
     window = MainWindow()
     
     sys.exit(app.exec())
