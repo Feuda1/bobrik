@@ -1,0 +1,15 @@
+﻿        # РЎРѕР·РґР°РµРј РєРЅРѕРїРєРё СЃ Р°РґР°РїС‚РёРІРЅС‹Рј СЂР°СЃРїРѕР»РѕР¶РµРЅРёРµРј
+        buttons_data = [
+            ("РЎРµРЅСЃРѕСЂРЅС‹Р№\nСЌРєСЂР°РЅ", self.toggle_touchscreen, True),  # is_toggle = True
+            ("Р РµР±СѓС‚\nСЃРµРЅСЃРѕСЂРЅРѕРіРѕ", self.reboot_touchscreen, False),
+            ("РџРµСЂРµР·Р°РіСЂСѓР·РєР°\nСЃРёСЃС‚РµРјС‹", self.request_reboot, False),
+            ("РћС‡РёСЃС‚РєР°\nTemp С„Р°Р№Р»РѕРІ", self.clean_temp_files, False),
+            ("РџРµСЂРµР·Р°РїСѓСЃРє\nCOM РїРѕСЂС‚РѕРІ", self.restart_com_ports, False),
+            ("РЈРїСЂР°РІР»РµРЅРёРµ\nСЃР»СѓР¶Р±Р°РјРё", self.open_services, False),
+            ("РћС‚РєР»СЋС‡РёС‚СЊ\nР·Р°С‰РёС‚Сѓ", self.disable_security, True),
+            ("РџР°РїРєР°\nР°РІС‚РѕР·Р°РіСЂСѓР·РєРё", self.open_startup, False),
+            ("РџР°РЅРµР»СЊ\nСѓРїСЂР°РІР»РµРЅРёСЏ", self.open_control_panel, False),
+            ("РџРµСЂРµР·Р°РїСѓСЃРє\nРґРёСЃРї. РїРµС‡Р°С‚Рё", self.restart_print_spooler, False),
+            ("РћС‡РёСЃС‚РєР°\nРѕС‡РµСЂРµРґРё РїРµС‡Р°С‚Рё", self.clear_print_queue, False),
+            ("РќР°СЃС‚СЂРѕР№РєР°\nTLS 1.2", self.configure_tls, False),
+            # RNDIS СѓРґР°Р»С‘РЅ
