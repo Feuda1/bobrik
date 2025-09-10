@@ -1,4 +1,4 @@
-﻿from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                              QScrollArea, QStackedWidget, QPushButton, QButtonGroup,
                              QSystemTrayIcon, QMenu, QMessageBox, QApplication, QSplitter)
 from PyQt6.QtCore import Qt, QTimer, QSize
@@ -12,6 +12,7 @@ from ui.tabs.iiko_tab import IikoTab
 from ui.tabs.logs_tab import LogsTab
 from ui.tabs.folders_tab import FoldersTab
 from ui.tabs.network_tab import NetworkTab
+from ui.widgets.touch_auth_dialog import TouchAuthDialog
 from managers.update_manager import SimpleUpdateManager
 from config import WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, LAYOUT_PARAMS, get_is_small_screen
 
@@ -31,7 +32,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.tray_icon = None
-        self.is_authenticated = True
+        self.is_authenticated = False
         self.is_small_screen = get_is_small_screen()
         
         self.idle_timer = QTimer()
@@ -340,13 +341,14 @@ class MainWindow(QMainWindow):
         self.console_panel.add_log(message, log_type)
         
     def reset_idle_timer(self):
-        if self.isVisible():
+        if self.is_authenticated and self.isVisible():
             self.idle_timer.stop()
             self.idle_timer.start(self.idle_timeout)
     
     def auto_lock(self):
-        if self.isVisible():
-            self.console_panel.add_log("Auto lock: hidden to tray after 10 minutes idle", "warning")
+        if self.is_authenticated and self.isVisible():
+            self.console_panel.add_log("🔒 Автоблокировка: бездействие более 10 минут", "warning")
+            self.is_authenticated = False
             self.hide_to_tray()
             
     def mousePressEvent(self, event):
@@ -382,11 +384,33 @@ class MainWindow(QMainWindow):
             self.show_window()
     
     def show_window(self):
+        if not self.is_authenticated:
+            self.show_pin_dialog()
+        else:
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            self.reset_idle_timer()
+    
+    def show_pin_dialog(self):
+        auth_dialog = TouchAuthDialog(self)
+        auth_dialog.auth_accepted.connect(self.on_pin_accepted)
+        
+        if auth_dialog.exec() == auth_dialog.DialogCode.Accepted:
+            pass
+        else:
+            pass
+    
+    def on_pin_accepted(self):
+        self.is_authenticated = True
+        self.console_panel.add_log("Авторизация успешна", "success")
+        
         self.show()
         self.raise_()
         self.activateWindow()
         self.reset_idle_timer()
-    def  hide_to_tray(self):
+    
+    def hide_to_tray(self):
         self.idle_timer.stop()
         self.dropdown_search.hide_dropdown()
         self.hide()
@@ -423,9 +447,9 @@ class MainWindow(QMainWindow):
         self.search_shortcut.activated.connect(self.focus_header_search)
         
     def focus_header_search(self):
-        self.header.focus_search()
-        self.console_panel.add_log("Focus search (Ctrl+K)", "info")
-
+        if self.is_authenticated:
+            self.header.focus_search()
+            self.console_panel.add_log("🔍 Поиск активирован (Ctrl+K)", "info")
     
     def check_updates(self):
         self.update_manager.check_for_updates()
@@ -497,7 +521,7 @@ class MainWindow(QMainWindow):
             self.dropdown_search.hide_dropdown()
     
     def position_dropdown_search(self, x, y):
-        if self.header.get_search_text().strip():
+        if self.is_authenticated and self.header.get_search_text().strip():
             self.dropdown_search.show_dropdown(x, y)
     
     def on_search_closed(self):
@@ -514,7 +538,7 @@ class MainWindow(QMainWindow):
             
             tab_names = ["Система", "iiko", "Логи", "Папки", "Сеть", "Программы", "Плагины"]
             tab_name = tab_names[tab_index] if tab_index < len(tab_names) else "Неизвестно"
-            self.console_panel.add_log(f"?? Переход: {tab_name}", "info")
+            self.console_panel.add_log(f"📍 Переход: {tab_name}", "info")
             
             if search_item and hasattr(search_item, 'button_text') and search_item.button_text:
                 self.highlight_button_in_tab(tab_index, search_item.button_text)
@@ -537,7 +561,7 @@ class MainWindow(QMainWindow):
                 if button.text() == button_text:
                     self.apply_highlight_style(button)
                     QTimer.singleShot(3000, lambda: self.remove_highlight_style(button))
-                    self.console_panel.add_log(f"?? Найдено: {button_text}", "info")
+                    self.console_panel.add_log(f"🔍 Найдено: {button_text}", "info")
                     break
                     
         except Exception as e:
